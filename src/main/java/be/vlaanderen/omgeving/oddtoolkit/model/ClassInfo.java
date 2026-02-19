@@ -12,6 +12,7 @@ public class ClassInfo extends AbstractInfo {
   private UriTemplate uriTemplate;
   private List<ClassInfo> superClasses = new ArrayList<>();
   private List<PropertyInfo> properties = new ArrayList<>();
+  private List<Resource> individuals = new ArrayList<>();
 
   public ClassInfo(Scope scope, Resource resource) {
     super(scope, resource);

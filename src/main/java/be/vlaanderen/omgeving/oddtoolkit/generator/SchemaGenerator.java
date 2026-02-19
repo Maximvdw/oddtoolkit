@@ -1,6 +1,7 @@
 package be.vlaanderen.omgeving.oddtoolkit.generator;
 
 import be.vlaanderen.omgeving.oddtoolkit.adapter.AbstractAdapter;
+import be.vlaanderen.omgeving.oddtoolkit.config.DiagramGeneratorProperties;
 import be.vlaanderen.omgeving.oddtoolkit.config.OntologyConfiguration;
 import be.vlaanderen.omgeving.oddtoolkit.config.OntologyConfiguration.ExtraProperty;
 import be.vlaanderen.omgeving.oddtoolkit.model.ClassInfo;
@@ -8,7 +9,6 @@ import be.vlaanderen.omgeving.oddtoolkit.model.ConceptSchemeInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.OntologyInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.PropertyInfo;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
@@ -22,7 +22,13 @@ public abstract class SchemaGenerator extends DiagramGenerator {
 
   public SchemaGenerator(OntologyInfo ontologyInfo,
       ConceptSchemeInfo conceptSchemeInfo, List<AbstractAdapter<?>> adapters) {
-    super(ontologyInfo, conceptSchemeInfo, adapters);
+    this(ontologyInfo, conceptSchemeInfo, adapters, null);
+  }
+
+  public SchemaGenerator(OntologyInfo ontologyInfo,
+      ConceptSchemeInfo conceptSchemeInfo, List<AbstractAdapter<?>> adapters,
+      DiagramGeneratorProperties diagramGeneratorProperties) {
+    super(ontologyInfo, conceptSchemeInfo, adapters, diagramGeneratorProperties);
     this.ontologyConfiguration = ontologyInfo.getConfig();
   }
 
@@ -30,6 +36,7 @@ public abstract class SchemaGenerator extends DiagramGenerator {
   public void run() {
     super.run();
     extractTables();
+    extractRelations();
   }
 
   private String getIdentifierColumnUri() {
@@ -39,6 +46,22 @@ public abstract class SchemaGenerator extends DiagramGenerator {
         .findFirst()
         .map(ExtraProperty::getUri)
         .orElse("http://www.w3.org/1999/02/22-rdf-syntax-ns#id");
+  }
+
+  private void extractRelations() {
+    tables.forEach(this::extractColumnRelations);
+
+    // Extract inheritance relations and tables
+    tables.forEach(this::extractInheritance);
+
+    // Create join tables for many-to-many relations
+    new ArrayList<>(tables).forEach(this::extractManyToManyRelations);
+  }
+
+  private void extractStyles(Table table) {
+    // Get style for the table
+    String style = getStyleForClass(table.getClassInfo());
+    table.setDiagramStyle(style);
   }
 
   private void extractTables() {
@@ -62,22 +85,17 @@ public abstract class SchemaGenerator extends DiagramGenerator {
         });
     // Now extract columns
     tables.forEach(this::extractColumns);
-    tables.forEach(this::extractColumnRelations);
-
-    // Extract inheritance relations and tables
-    tables.forEach(this::extractInheritance);
-
-    // Create join tables for many-to-many relations
-    new ArrayList<>(tables).forEach(this::extractManyToManyRelations);
+    tables.forEach(this::extractStyles);
   }
 
   private void extractManyToManyRelations(Table table) {
-    // Extract many to many relations
+    // Extract many-to-many relations
     List<Relation> newRelations = new ArrayList<>();
     table.getRelations().forEach(relation -> {
       if (relation.getCardinality() == Cardinality.MANY_TO_MANY) {
         // Create join table
         Table joinTable = new Table();
+        joinTable.setDiagramStyle(table.getDiagramStyle());
         joinTable.setClassInfo(table.getClassInfo());
         joinTable.setName(
             toSnakeCase(relation.getFrom().getName() + "_" + relation.getTo().getName()));
@@ -100,8 +118,10 @@ public abstract class SchemaGenerator extends DiagramGenerator {
         joinTable.setColumns(joinColumns);
         tables.add(joinTable);
         // Create relations from original tables to join table
-        createJoinTableRelation(relation.getFrom(), joinTable, relation.getFromColumn());
-        createJoinTableRelation(relation.getTo(), joinTable, relation.getToColumn());
+        createJoinTableRelation(relation.getName(), relation.getFrom(), joinTable,
+            relation.getFromColumn());
+        createJoinTableRelation(relation.getName(), relation.getTo(), joinTable,
+            relation.getToColumn());
         // Remove columns
         table.getColumns()
             .removeIf(c -> c.equals(relation.getFromColumn()) || c.equals(relation.getToColumn()));
@@ -112,13 +132,15 @@ public abstract class SchemaGenerator extends DiagramGenerator {
     table.setRelations(newRelations);
   }
 
-  private void createJoinTableRelation(Table targetTable, Table joinTable, Column toColumn) {
+  private void createJoinTableRelation(String name, Table targetTable, Table joinTable,
+      Column toColumn) {
     Relation toRelation = new Relation();
     toRelation.setFrom(joinTable);
     toRelation.setTo(targetTable);
     toRelation.setFromColumn(toColumn);
     toRelation.setToColumn(targetTable.getColumnByUri(getIdentifierColumnUri()));
     toRelation.setCardinality(Cardinality.MANY_TO_ONE);
+    toRelation.setName(name);
     joinTable.getRelations().add(toRelation);
   }
 
@@ -232,12 +254,6 @@ public abstract class SchemaGenerator extends DiagramGenerator {
     table.setColumns(columns);
   }
 
-  @Override
-  protected List<DiagramStyle> getStyleEntries() {
-    // No default styles for schema generator; subclasses may override
-    return Collections.emptyList();
-  }
-
   protected Table getTableByClassInfo(ClassInfo classInfo) {
     return tables.stream()
         .filter(t -> t.getClassInfo().equals(classInfo))
@@ -294,6 +310,7 @@ public abstract class SchemaGenerator extends DiagramGenerator {
     private String name;
     private List<Column> columns = new ArrayList<>();
     private List<Relation> relations = new ArrayList<>();
+    private String diagramStyle;
 
     public Column getColumnByPropertyInfo(PropertyInfo propertyInfo) {
       return columns.stream()
@@ -304,7 +321,8 @@ public abstract class SchemaGenerator extends DiagramGenerator {
 
     public Column getColumnByUri(String propertyUri) {
       return columns.stream()
-          .filter(c -> c.getPropertyInfo() != null && c.getPropertyInfo().getUri().equals(propertyUri))
+          .filter(
+              c -> c.getPropertyInfo() != null && c.getPropertyInfo().getUri().equals(propertyUri))
           .findFirst()
           .orElse(null);
     }

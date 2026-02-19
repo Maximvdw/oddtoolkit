@@ -33,6 +33,12 @@ public class PropertyInfo extends AbstractInfo {
   }
 
   protected void initializeProperty(Resource resource) {
+    if (getComment() == null) {
+      // Try to get the comment from the resource if not already set
+      if (resource.hasProperty(RDFS.comment)) {
+        setComment(resource.getProperty(RDFS.comment).getString());
+      }
+    }
     if (resource.hasProperty(RDF.type, RDF.Property) || resource.hasProperty(RDF.type,
         OWL2.ObjectProperty) || resource.hasProperty(RDF.type, OWL2.DatatypeProperty)) {
       setUri(resource.getURI());

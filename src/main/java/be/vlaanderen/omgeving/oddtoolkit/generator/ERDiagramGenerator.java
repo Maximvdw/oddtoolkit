@@ -1,6 +1,7 @@
 package be.vlaanderen.omgeving.oddtoolkit.generator;
 
 import be.vlaanderen.omgeving.oddtoolkit.adapter.AbstractAdapter;
+import be.vlaanderen.omgeving.oddtoolkit.config.DiagramGeneratorProperties;
 import be.vlaanderen.omgeving.oddtoolkit.config.ERDiagramProperties;
 import be.vlaanderen.omgeving.oddtoolkit.model.ConceptSchemeInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.OntologyInfo;
@@ -14,8 +15,9 @@ public class ERDiagramGenerator extends SchemaGenerator {
   public ERDiagramGenerator(OntologyInfo ontologyInfo,
       ConceptSchemeInfo conceptSchemeInfo,
       List<AbstractAdapter<?>> adapters,
+      DiagramGeneratorProperties diagramGeneratorProperties,
       ERDiagramProperties generatorProperties) {
-    super(ontologyInfo, conceptSchemeInfo, adapters);
+    super(ontologyInfo, conceptSchemeInfo, adapters, diagramGeneratorProperties);
     this.generatorProperties = generatorProperties;
   }
 
@@ -38,6 +40,7 @@ public class ERDiagramGenerator extends SchemaGenerator {
   @Override
   protected void renderContent(StringBuilder builder, String type) {
     generateTables(builder);
+    emitStyleDefinitions(builder);
   }
 
   private void generateTables(StringBuilder builder) {
@@ -61,6 +64,10 @@ public class ERDiagramGenerator extends SchemaGenerator {
         builder.append("\n");
       });
       builder.append("}\n\n");
+      // Generate style for the table if applicable
+      if (table.getDiagramStyle() != null) {
+        builder.append("class ").append(table.getName()).append(" ").append(table.getDiagramStyle()).append("\n");
+      }
       generateRelations(builder, table);
     });
   }

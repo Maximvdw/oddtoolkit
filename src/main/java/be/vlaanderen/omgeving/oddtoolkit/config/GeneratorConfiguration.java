@@ -57,10 +57,11 @@ public class GeneratorConfiguration {
       ConceptSchemeInfo conceptSchemeInfo,
       ApplicationContext context,
       GeneratorProperties generatorProperties,
+      DiagramGeneratorProperties diagramGeneratorProperties,
       ERDiagramProperties erDiagramProperties) {
     Map<String, AbstractAdapter<?>> adapterBeans = (Map) context.getBeansOfType(AbstractAdapter.class);
     List<AbstractAdapter<?>> adapters = selectAdapters(adapterBeans, generatorProperties.adaptersFor("er-diagram"));
-    return new ERDiagramGenerator(ontologyInfo, conceptSchemeInfo, adapters, erDiagramProperties);
+    return new ERDiagramGenerator(ontologyInfo, conceptSchemeInfo, adapters, diagramGeneratorProperties, erDiagramProperties);
   }
 
   @Bean

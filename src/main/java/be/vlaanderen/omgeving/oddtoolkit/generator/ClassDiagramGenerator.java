@@ -9,7 +9,6 @@ import be.vlaanderen.omgeving.oddtoolkit.model.ConceptSchemeInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.OntologyInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.PropertyInfo;
 import java.util.List;
-import java.util.Map;
 import org.apache.jena.atlas.lib.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -161,22 +160,5 @@ public class ClassDiagramGenerator extends DiagramGenerator {
     // Get the concept property
     String propertyName = getPropertyNameAndLabel(propertyInfo).getLeft();
     builder.append("  ").append(dataTypeName).append(" ").append(propertyName).append("\n");
-  }
-
-  // Emit class diagram style definitions (classDef ...) from DiagramGenerator properties
-  private void emitStyleDefinitions(StringBuilder builder) {
-    List<DiagramStyle> styles = getStyleEntries();
-    if (styles == null) return;
-    for (DiagramStyle style : styles) {
-      if (style != null && style.uri != null && style.name != null && style.props != null) {
-        builder.append("classDef ").append(style.name).append(" ");
-        int i = 0;
-        for (Map.Entry<String, Object> e : style.props.entrySet()) {
-          if (i++ > 0) builder.append(',');
-          builder.append(e.getKey()).append(":").append(e.getValue());
-        }
-        builder.append("\n");
-      }
-    }
   }
 }

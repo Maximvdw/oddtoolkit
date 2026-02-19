@@ -1,14 +1,10 @@
 package be.vlaanderen.omgeving.oddtoolkit.model;
 
-import java.io.StringWriter;
 import java.util.Objects;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.Resource;
 import org.apache.jena.rdf.model.Statement;
-import org.apache.jena.riot.Lang;
-import org.apache.jena.riot.RDFDataMgr;
 import org.apache.jena.vocabulary.RDFS;
 import org.jspecify.annotations.Nullable;
 
@@ -51,13 +47,9 @@ public abstract class AbstractInfo {
   }
 
   public String toString() {
-    Model model = resource.getModel()
-        .listStatements(resource, null, (Resource) null)
-        .toModel();
-    StringWriter writer = new StringWriter();
-    RDFDataMgr.write(writer, model, Lang.TURTLE);
-    return writer.toString();
+    return getName();
   }
+
   public boolean equals(Object o) {
     if (this == o) {
       return true;

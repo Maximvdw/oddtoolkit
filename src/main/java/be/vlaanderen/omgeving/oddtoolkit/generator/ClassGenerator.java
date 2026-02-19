@@ -6,6 +6,7 @@ import be.vlaanderen.omgeving.oddtoolkit.model.ConceptSchemeInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.OntologyInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.PropertyInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.Scope;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -77,12 +78,12 @@ public class ClassGenerator extends BaseGenerator {
           .toList());
       return;
     }
-    // Remove the property that is an inverse property
-    // We will keep the property that has a comment and remove the one without a comment
-    classInfo.setProperties(classInfo.getProperties().stream()
-        .filter(
-            p -> p.getInverseOf() == null || (p.getComment() != null && !p.getComment().isEmpty()))
-        .toList());
+    // Remove inverse properties if they don't have a comment
+    List<PropertyInfo> remainingProperties = classInfo.getProperties()
+        .stream()
+        .filter(p -> p.getInverseOf() == null || (p.getComment() != null && !p.getComment().isEmpty()))
+        .toList();
+    classInfo.setProperties(remainingProperties);
   }
 
   protected void filterInterfaces() {
@@ -188,8 +189,11 @@ public class ClassGenerator extends BaseGenerator {
         .filter(c -> !enums.containsKey(c))
         .toList();
     this.enums.forEach((enumInfo, enumList) -> {
+      // Clear all properties
+      enumInfo.setProperties(new ArrayList<>());
       // Get a list of all classes that are subclasses of the enum class
-      List<ClassInfo> subclasses = getSubClasses(enumInfo)
+      List<ClassInfo> subclasses = new ArrayList<>();
+      getSubClasses(enumInfo)
           .stream()
           // Assume the class does not have any properties; otherwise it would not be an enum subclass
           // Ignore extra attributes that are added by default to all classes
@@ -197,9 +201,12 @@ public class ClassGenerator extends BaseGenerator {
               .allMatch(p -> p.isIdentifier() || getOntologyConfiguration().getExtraProperties()
                   .stream()
                   .anyMatch(ep -> ep.getUri().equals(p.getUri()))))
-          .toList();
+          .forEach(subclasses::add);
       // Get a list of all "classes" that are individuals of the enum class
-      // TODO
+      enumInfo.getIndividuals()
+          .stream()
+          .map(i -> new ClassInfo(enumInfo.getScope(), i))
+          .forEach(subclasses::add);
       // Add the subclasses to the enum map
       enums.put(enumInfo, subclasses);
       // Remove the subclasses from the concrete classes and interfaces
