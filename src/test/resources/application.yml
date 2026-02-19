@@ -1,0 +1,106 @@
+ontology:
+  ontology-file-path: "src/test/resources/examples/ns/riepr/riepr.ttl"
+  concepts-file-path: "src/test/resources/examples/id/concept/riepr/riepr.ttl"
+  enum-classes:
+    - "http://www.w3.org/ns/sosa/Procedure"
+    - "http://www.w3.org/ns/adms#Status"
+  extra-properties:
+    # We want to use UUIDs as identifiers (including any identifiers from the IRI Template's)
+    - name: "uuid"
+      uri: "https://data.riepr.omgeving.vlaanderen.be/ns/riepr#localId"
+      comment: "UUID"
+      identifier: true
+      range: "http://www.w3.org/2001/XMLSchema#string"
+      cardinality:
+        max: 1
+        min: 1
+    # We want to keep the URI in the database for reference
+    - name: "uri"
+      uri: "http://example.org/vocab/uri"
+      comment: "URI"
+      range: "http://www.w3.org/2001/XMLSchema#string"
+      cardinality:
+        max: 1
+        min: 1
+  override-properties:
+    # Labels and comments can be available in multiple languages
+    # In our application we only want one label and comment per entity
+    - uri: "http://www.w3.org/2000/01/rdf-schema#label"
+      cardinality:
+        max: 1
+      datatype: "http://www.w3.org/2001/XMLSchema#string"
+    - uri: "http://www.w3.org/2000/01/rdf-schema#comment"
+      cardinality:
+        max: 1
+      datatype: "http://www.w3.org/2001/XMLSchema#string"
+
+generators:
+  class-diagram:
+    output-file: "target/test-cache/class-diagram/class-diagram.mmd"
+  er-diagram:
+    output-file: "target/test-cache/er-diagram/er-diagram.mmd"
+
+  diagram-generator:
+    styles:
+      - name: "system"
+        uri: "http://www.w3.org/ns/ssn/System"
+        props:
+          fill: "#ffeecc"
+          stroke: "#000000"
+      - name: "procedure"
+        uri: "http://www.w3.org/ns/sosa/Procedure"
+        props:
+          fill: "#ccffcc"
+          stroke: "#000000"
+      - name: "result"
+        uri: "http://www.w3.org/ns/sosa/Result"
+        props:
+          fill: "#ccccff"
+          stroke: "#000000"
+      - name: "exploitatie"
+        uri: "http://data.riepr.omgeving.vlaanderen.be/ns/riepr#Exploitatie"
+        props:
+          fill: "#ffcccc"
+          stroke: "#000000"
+
+adapters:
+  ontology-reasoner:
+    enabled: true
+    rules-file: "src/test/resources/examples/reasoner.rules"
+    reasoner-type: "owl"
+    reasoner-materialize: true
+    reasoner-timeout-ms: 0
+    inferred-output-enabled: true
+    inferred-output-path: "target/test-cache/inferred/inferred.ttl"
+    inferred-cache-enabled: true
+    inferred-cache-ttl-ms: 3600000
+    inferred-cache-dir: "target/test-cache/inferred"
+    inferred-cache-format: "TURTLE"
+    mirrors:
+      - uri: "http://www.w3.org/ns/prov#"
+        mirrors:
+          - "https://www.w3.org/ns/prov-o"
+      - uri: "http://purl.org/net/p-plan#"
+        mirrors:
+          - "https://dgarijo.github.io/Vocabularies/P-PLAN/Releases/Release12032014/p-plan.owl"
+      - uri: "http://www.w3.org/ns/sosa/prov"
+        mirrors:
+          - "https://raw.githubusercontent.com/w3c/sdw/refs/heads/gh-pages/ssn/rdf/sosa-prov-mapping.ttl"
+      - uri: "http://qudt.org/schema/qudt/"
+        mirrors:
+          - "https://raw.githubusercontent.com/qudt/qudt-public-repo/refs/heads/main/src/main/rdf/schema/SCHEMA_QUDT.ttl"
+      - uri: "http://xmlns.com/foaf/0.1/"
+        mirrors:
+          - "https://xmlns.com/foaf/spec/index.rdf"
+      - uri: "http://www.w3.org/ns/locn#"
+        mirrors:
+          - "https://www.w3.org/ns/legacy_locn.ttl"
+      - uri: "http://www.w3.org/ns/adms#"
+        mirrors:
+          - "https://www.w3.org/ns/legacy_adms.ttl"
+      - uri: "http://dbpedia.org/ontology/"
+        mirrors:
+          - "https://downloads.dbpedia.org/2016-10/dbpedia_2016-10.nt"
+      - uri: "http://www.opengis.net/ont/geosparql#"
+        mirrors:
+          - "https://raw.githubusercontent.com/opengeospatial/ogc-geosparql/refs/heads/master/vocabularies/geo.ttl"
