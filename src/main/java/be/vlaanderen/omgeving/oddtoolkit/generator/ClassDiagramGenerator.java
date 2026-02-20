@@ -4,12 +4,9 @@ import be.vlaanderen.omgeving.oddtoolkit.adapter.AbstractAdapter;
 import be.vlaanderen.omgeving.oddtoolkit.config.ClassDiagramProperties;
 import be.vlaanderen.omgeving.oddtoolkit.config.DiagramGeneratorProperties;
 import be.vlaanderen.omgeving.oddtoolkit.model.ClassConceptInfo;
-import be.vlaanderen.omgeving.oddtoolkit.model.ClassInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.ConceptSchemeInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.OntologyInfo;
-import be.vlaanderen.omgeving.oddtoolkit.model.PropertyInfo;
 import java.util.List;
-import org.apache.jena.atlas.lib.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,13 +46,13 @@ public class ClassDiagramGenerator extends DiagramGenerator {
   @Override
   protected void renderContent(StringBuilder builder, String type) {
     // Generate classes and interfaces
-    for (ClassInfo classInfo : getConcreteClasses()) {
+    for (Clazz classInfo : getClasses()) {
       generateClass(builder, classInfo, ClassType.CLASS);
     }
-    for (ClassInfo interfaceInfo : getInterfaces()) {
+    for (Interface interfaceInfo : getInterfaces()) {
       generateClass(builder, interfaceInfo, ClassType.INTERFACE);
     }
-    for (ClassInfo enumInfo : getEnums().keySet()) {
+    for (Enum enumInfo : getEnums()) {
       generateClass(builder, enumInfo, ClassType.ENUM);
     }
 
@@ -64,14 +61,14 @@ public class ClassDiagramGenerator extends DiagramGenerator {
   }
 
   // Keep the existing helper methods but make them protected so DiagramGenerator can call them
-  protected void generateClass(StringBuilder builder, ClassInfo classInfo, ClassType type) {
+  protected void generateClass(StringBuilder builder, Clazz classInfo, ClassType type) {
     // Get the concept class
     ClassConceptInfo classConceptInfo = getClassConceptForClass(classInfo.getUri());
     String className = classConceptInfo != null ? classConceptInfo.getName() : classInfo.getName();
     // Add documentation as comment
     builder.append("%% ").append(classInfo.getUri()).append("\n");
     // apply style if configured
-    String style = getStyleForClass(classInfo);
+    String style = getStyleForClass(classInfo.getClassInfo());
     builder.append("class ").append(className);
     if (style != null) {
       builder.append(":::").append(style);
@@ -81,16 +78,13 @@ public class ClassDiagramGenerator extends DiagramGenerator {
       builder.append("  <<").append(type.getValue()).append(">>\n");
     }
     if (type == ClassType.ENUM) {
-      List<ClassInfo> enumValues = getEnums().get(classInfo);
-      for (ClassInfo enumValue : enumValues) {
-        // Format the enum name
-        String enumValueName = enumValue.getName()
-            .toUpperCase().replace(classInfo.getName().toUpperCase(), "");
-        builder.append("  ").append(enumValueName).append("\n");
+      List<EnumValue> enumValues = getEnum(classInfo.getClassInfo()).getValues();
+      for (EnumValue enumValue : enumValues) {
+        builder.append("  ").append(enumValue.getName()).append("\n");
       }
     } else {
-      for (PropertyInfo propertyInfo : classInfo.getProperties()) {
-        generateProperty(builder, propertyInfo);
+      for (Attribute attribute : classInfo.getAttributes()) {
+        generateProperty(builder, attribute);
       }
     }
     builder.append("}\n");
@@ -98,67 +92,40 @@ public class ClassDiagramGenerator extends DiagramGenerator {
     generateRelations(builder, classInfo);
   }
 
-  protected void generateRelations(StringBuilder builder, ClassInfo classInfo) {
-    Pair<String, String> classNameAndLabel = getClassNameAndLabel(classInfo);
-    for (PropertyInfo propertyInfo : classInfo.getProperties()) {
-      if (propertyInfo.getRange() != null) {
-        for (String domainUri : propertyInfo.getRange()) {
-          ClassInfo domainClass = getNearestClass(domainUri);
-          if (domainClass != null) {
-            // Get the concept class for the domain class
-            Pair<String, String> domainClassNameAndLabel = getClassNameAndLabel(domainClass);
-            // Get the concept property for the property
-            Pair<String, String> propertyNameAndLabel = getPropertyNameAndLabel(propertyInfo);
-            String propertyLabel = propertyNameAndLabel.getRight();
-            builder.append("%% ").append(propertyInfo.getUri()).append("\n");
-            builder.append(classNameAndLabel.getLeft()).append(" --> ")
-                .append(domainClassNameAndLabel.getLeft())
-                .append(" : ").append(propertyLabel).append("\n");
-          }
-        }
+  protected void generateRelations(StringBuilder builder, Clazz classInfo) {
+    for (Attribute attribute : classInfo.getAttributes()) {
+      if (attribute.getRange() != null) {
+        Clazz domainClass = attribute.getRange();
+        builder.append("%% ").append(attribute.getPropertyInfo().getUri()).append("\n");
+        builder.append(classInfo.getName()).append(" --> ")
+            .append(domainClass.getName())
+            .append(" : ").append(attribute.getName()).append("\n");
       }
     }
     // Generate subclass relations for classes that are in concrete classes or interfaces, but not for enums
-    for (ClassInfo superClass : classInfo.getSuperClasses()) {
-      if (getConcreteClasses().contains(superClass) || getInterfaces().contains(superClass)) {
-        // Get the concept class for the superclass
-        Pair<String, String> superClassNameAndLabel = getClassNameAndLabel(superClass);
-        builder.append(superClassNameAndLabel.getLeft()).append(" <|-- ")
-            .append(classNameAndLabel.getLeft()).append("\n");
-      }
+    for (Interface superInterface : classInfo.getInterfaces()) {
+        builder.append(superInterface.getName()).append(" <|-- ")
+            .append(classInfo.getName()).append("\n");
+    }
+    if (classInfo.getExtendsClass() != null) {
+      builder.append(classInfo.getExtendsClass().getName()).append(" <|-- ")
+          .append(classInfo.getName()).append("\n");
     }
   }
 
-  protected void generateProperty(StringBuilder builder, PropertyInfo propertyInfo) {
+  protected void generateProperty(StringBuilder builder, Attribute propertyInfo) {
     // Get the data type of the property
-    String dataType = propertyInfo.getRange() != null && !propertyInfo.getRange().isEmpty()
-        ? propertyInfo.getRange().getFirst() : null;
-    ClassInfo dataTypeClass = getNearestClass(dataType);
-    if (dataTypeClass == null && dataType != null) {
-      dataTypeClass = getXsdType(dataType);
-      if (dataTypeClass != null) {
-        dataTypeClass.setName(this.getReadableDataType(dataTypeClass.getName()));
-      }
-    }
-    ClassConceptInfo dataTypeClassInfo =
-        dataTypeClass != null ? getClassConceptForClass(dataTypeClass.getUri()) : null;
-
-    String dataTypeName =
-        dataTypeClassInfo != null ? dataTypeClassInfo.getName()
-            : (dataTypeClass != null ? dataTypeClass.getName() : "String");
+    String dataTypeName = propertyInfo.getDataType().getName();
     // Determine if it is an array
-    if (propertyInfo.getCardinalityTo().getMax() == null
-        || propertyInfo.getCardinalityTo().getMax() > 1) {
+    if (propertyInfo.getCardinality().isToMany()) {
       dataTypeName += "[]";
     }
 
     // Determine if its an identifier
-    if (propertyInfo.isIdentifier()) {
+    if (propertyInfo.isPrimaryKey()) {
       dataTypeName = "+" + dataTypeName;
     }
 
-    // Get the concept property
-    String propertyName = getPropertyNameAndLabel(propertyInfo).getLeft();
-    builder.append("  ").append(dataTypeName).append(" ").append(propertyName).append("\n");
+    builder.append("  ").append(dataTypeName).append(" ").append(propertyInfo.getName()).append("\n");
   }
 }

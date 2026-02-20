@@ -22,6 +22,14 @@ ontology:
       cardinality:
         max: 1
         min: 1
+    # We want to determine if something is posted or in draft
+    - name: "ingediend"
+      uri: "https://data.riepr.omgeving.vlaanderen.be/ns/riepr#ingediend"
+      comment: "Indicates whether the entity is ingediend (posted) or not (draft)"
+      range: "http://www.w3.org/2001/XMLSchema#boolean"
+      cardinality:
+        max: 1
+        min: 1
   override-properties:
     # Labels and comments can be available in multiple languages
     # In our application we only want one label and comment per entity
@@ -33,19 +41,33 @@ ontology:
       cardinality:
         max: 1
       datatype: "http://www.w3.org/2001/XMLSchema#string"
+    - uri: "http://qudt.org/schema/qudt/numericValue"
+      cardinality:
+        max: 1
+      datatype: "http://www.w3.org/2001/XMLSchema#decimal"
 
 generators:
   class-diagram:
     output-file: "target/test-cache/class-diagram/class-diagram.mmd"
   er-diagram:
     output-file: "target/test-cache/er-diagram/er-diagram.mmd"
+  sql-generator:
+    output-file: "target/test-cache/sql/schema.sql"
+
+  schema-generator:
+    # Merge join tables if two classes have multiple relations to each other,
+    # differentiated only by the property
+    merge-join-tables:
+      enabled: true
+      attribute-name: "relation_type"
+
 
   diagram-generator:
     styles:
       - name: "system"
         uri: "http://www.w3.org/ns/ssn/System"
         props:
-          fill: "#ffeecc"
+          fill: "#4bde2a"
           stroke: "#000000"
       - name: "procedure"
         uri: "http://www.w3.org/ns/sosa/Procedure"
@@ -57,10 +79,14 @@ generators:
         props:
           fill: "#ccccff"
           stroke: "#000000"
-      - name: "exploitatie"
-        uri: "http://data.riepr.omgeving.vlaanderen.be/ns/riepr#Exploitatie"
+      - name: "exploitant"
+        uris:
+          - "https://data.riepr.omgeving.vlaanderen.be/ns/riepr#Exploitant"
+          - "https://data.riepr.omgeving.vlaanderen.be/ns/riepr#ExploitatieLocatie"
+          - "https://data.riepr.omgeving.vlaanderen.be/ns/riepr#Exploitatie"
+          - "http://xmlns.com/foaf/0.1/Person"
         props:
-          fill: "#ffcccc"
+          fill: "#f6ff00"
           stroke: "#000000"
 
 adapters:
@@ -76,6 +102,7 @@ adapters:
     inferred-cache-ttl-ms: 3600000
     inferred-cache-dir: "target/test-cache/inferred"
     inferred-cache-format: "TURTLE"
+  ontology-extract-external:
     mirrors:
       - uri: "http://www.w3.org/ns/prov#"
         mirrors:
@@ -104,3 +131,6 @@ adapters:
       - uri: "http://www.opengis.net/ont/geosparql#"
         mirrors:
           - "https://raw.githubusercontent.com/opengeospatial/ogc-geosparql/refs/heads/master/vocabularies/geo.ttl"
+    cache-dir: "target/test-cache/external"
+    cache-ttl-ms: 3600000
+    cache-enabled: true

@@ -3,10 +3,12 @@ package be.vlaanderen.omgeving.oddtoolkit.generator;
 import be.vlaanderen.omgeving.oddtoolkit.adapter.AbstractAdapter;
 import be.vlaanderen.omgeving.oddtoolkit.config.DiagramGeneratorProperties;
 import be.vlaanderen.omgeving.oddtoolkit.config.ERDiagramProperties;
+import be.vlaanderen.omgeving.oddtoolkit.config.SchemaGeneratorProperties;
 import be.vlaanderen.omgeving.oddtoolkit.model.ConceptSchemeInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.OntologyInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.PropertyInfo;
 import java.util.List;
+import java.util.Locale;
 
 public class ERDiagramGenerator extends SchemaGenerator {
 
@@ -16,8 +18,9 @@ public class ERDiagramGenerator extends SchemaGenerator {
       ConceptSchemeInfo conceptSchemeInfo,
       List<AbstractAdapter<?>> adapters,
       DiagramGeneratorProperties diagramGeneratorProperties,
+      SchemaGeneratorProperties schemaGeneratorProperties,
       ERDiagramProperties generatorProperties) {
-    super(ontologyInfo, conceptSchemeInfo, adapters, diagramGeneratorProperties);
+    super(ontologyInfo, conceptSchemeInfo, adapters, diagramGeneratorProperties, schemaGeneratorProperties);
     this.generatorProperties = generatorProperties;
   }
 
@@ -45,7 +48,7 @@ public class ERDiagramGenerator extends SchemaGenerator {
 
   private void generateTables(StringBuilder builder) {
     getTables().forEach(table -> {
-      builder.append("%% ").append(table.getClassInfo().getUri()).append("\n");
+      builder.append("%% ").append(table.getUri()).append("\n");
       builder.append(table.getName()).append(" {\n");
       table.getColumns().forEach(column -> {
         builder.append("  ").append(column.getName()).append(" ").append(column.getDataType());
@@ -75,7 +78,7 @@ public class ERDiagramGenerator extends SchemaGenerator {
   private void generateRelations(StringBuilder builder, Table table) {
     table.getRelations().forEach(relation -> {
       // Add a comment
-      PropertyInfo relationProperty = relation.getFromColumn().getPropertyInfo();
+      PropertyInfo relationProperty = (PropertyInfo) relation.getFromColumn().getPropertyInfo();
       Cardinality cardinality = relation.getCardinality();
       if (relationProperty != null) {
         builder.append("%% ").append(relation.getFromColumn().getPropertyInfo().getUri())
@@ -83,8 +86,8 @@ public class ERDiagramGenerator extends SchemaGenerator {
       }
       // Get the enum value (MANY_TO_ONE, ONE_TO_MANY, etc.) as a string (key of the enum)
       String cardinalityString = cardinality.name();
-      String cardinalityFromString = cardinalityString.split("_TO_")[0];
-      String cardinalityToString = cardinalityString.split("_TO_")[1];
+      String cardinalityFromString = cardinalityString.split("_TO_")[0].toLowerCase();
+      String cardinalityToString = cardinalityString.split("_TO_")[1].toLowerCase();
       builder.append(table.getName()).append(" ").append(cardinalityFromString).append(" to ")
           .append(cardinalityToString).append(" ").append(relation.getTo().getName());
       builder.append(" : ").append(relation.getName() != null ? relation.getName() : "\"\"")

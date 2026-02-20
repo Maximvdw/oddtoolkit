@@ -22,7 +22,7 @@ public class DiagramGeneratorProperties {
   public static class StyleEntry {
     private String name;
     private String uri;
+    private List<String> uris;
     private Map<String, Object> props;
   }
 }
-

@@ -6,14 +6,16 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-public class ClassGeneratorTest {
-  @Qualifier("classGenerator")
+public class SQLGeneratorTest {
+
+  @Qualifier("sqlGenerator")
   @Autowired
-  ClassGenerator generator;
+  SQLGenerator generator;
 
   @Test
-  void testGetConcreteClasses() {
+  void testRunGeneratesDiagram() {
+    // run generator
     generator.run();
   }
-
 }
+

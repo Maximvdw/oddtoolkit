@@ -4,6 +4,7 @@ import be.vlaanderen.omgeving.oddtoolkit.adapter.AbstractAdapter;
 import be.vlaanderen.omgeving.oddtoolkit.generator.ClassDiagramGenerator;
 import be.vlaanderen.omgeving.oddtoolkit.generator.ClassGenerator;
 import be.vlaanderen.omgeving.oddtoolkit.generator.ERDiagramGenerator;
+import be.vlaanderen.omgeving.oddtoolkit.generator.SQLGenerator;
 import be.vlaanderen.omgeving.oddtoolkit.generator.ShaclGenerator;
 import be.vlaanderen.omgeving.oddtoolkit.model.ConceptSchemeInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.OntologyInfo;
@@ -58,10 +59,24 @@ public class GeneratorConfiguration {
       ApplicationContext context,
       GeneratorProperties generatorProperties,
       DiagramGeneratorProperties diagramGeneratorProperties,
+      SchemaGeneratorProperties schemaGeneratorProperties,
       ERDiagramProperties erDiagramProperties) {
     Map<String, AbstractAdapter<?>> adapterBeans = (Map) context.getBeansOfType(AbstractAdapter.class);
     List<AbstractAdapter<?>> adapters = selectAdapters(adapterBeans, generatorProperties.adaptersFor("er-diagram"));
-    return new ERDiagramGenerator(ontologyInfo, conceptSchemeInfo, adapters, diagramGeneratorProperties, erDiagramProperties);
+    return new ERDiagramGenerator(ontologyInfo, conceptSchemeInfo, adapters, diagramGeneratorProperties, schemaGeneratorProperties, erDiagramProperties);
+  }
+
+  @Bean
+  public SQLGenerator sqlGenerator(OntologyInfo ontologyInfo,
+      ConceptSchemeInfo conceptSchemeInfo,
+      ApplicationContext context,
+      GeneratorProperties generatorProperties,
+      DiagramGeneratorProperties diagramGeneratorProperties,
+      SchemaGeneratorProperties schemaGeneratorProperties,
+      SQLGeneratorProperties sqlGeneratorProperties) {
+    Map<String, AbstractAdapter<?>> adapterBeans = (Map) context.getBeansOfType(AbstractAdapter.class);
+    List<AbstractAdapter<?>> adapters = selectAdapters(adapterBeans, generatorProperties.adaptersFor("sql"));
+    return new SQLGenerator(ontologyInfo, conceptSchemeInfo, adapters, diagramGeneratorProperties, schemaGeneratorProperties, sqlGeneratorProperties);
   }
 
   @Bean

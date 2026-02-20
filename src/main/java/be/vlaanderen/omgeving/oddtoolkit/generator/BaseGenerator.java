@@ -136,27 +136,49 @@ public class BaseGenerator {
     return null;
   }
 
+  /**
+   * Utility to convert a string to snake_case, suitable for identifiers in ER diagrams.
+   *
+   * @param input The input string to convert
+   * @return The snake_case version of the input string
+   */
+  protected static String toSnakeCase(String input) {
+    if (input == null) {
+      return null;
+    }
+    String s = input.trim();
+    // Replace camelCase boundaries with underscore
+    s = s.replaceAll("([a-z0-9])([A-Z])", "$1_$2");
+    // Replace non-alphanumeric chars with underscore
+    s = s.replaceAll("[^A-Za-z0-9]+", "_");
+    s = s.replaceAll("_+", "_");
+    s = s.replaceAll("^_+|_+$", "");
+    return s.toLowerCase();
+  }
+
   public Pair<String, String> getClassNameAndLabel(ClassInfo classInfo) {
     ClassConceptInfo classConceptInfo = getClassConceptForClass(classInfo.getUri());
-    String className =
-        classConceptInfo != null ? classConceptInfo.getName() : classInfo.getName();
-    String classConceptLabel =
-        classConceptInfo != null ? (classConceptInfo.getLabel() != null
-            ? classConceptInfo.getLabel() : classConceptInfo.getName()) : null;
-    String classLabel =
-        classConceptLabel != null ? classConceptLabel : classInfo.getName();
-    return new Pair<>(className, classLabel);
+    return getStringStringPair(classConceptInfo != null,
+        classConceptInfo != null ? classConceptInfo.getName() : null,
+        classInfo.getName(), classConceptInfo != null ? classConceptInfo.getLabel() : null);
   }
 
   public Pair<String, String> getPropertyNameAndLabel(PropertyInfo propertyInfo) {
     PropertyConceptInfo propertyConceptInfo = getPropertyConceptForProperty(propertyInfo.getUri());
+    return getStringStringPair(propertyConceptInfo != null,
+        propertyConceptInfo != null ? propertyConceptInfo.getName() : null,
+        propertyInfo.getName(), propertyConceptInfo != null ? propertyConceptInfo.getLabel() : null);
+  }
+
+  private Pair<String, String> getStringStringPair(boolean b, String name, String name2,
+      String label) {
     String propertyName =
-        propertyConceptInfo != null ? propertyConceptInfo.getName() : propertyInfo.getName();
+        b ? name : name2;
     String propertyConceptLabel =
-        propertyConceptInfo != null ? (propertyConceptInfo.getLabel() != null
-            ? propertyConceptInfo.getLabel() : propertyConceptInfo.getName()) : null;
+        b ? (label != null
+            ? label : name) : null;
     String propertyLabel =
-        propertyConceptLabel != null ? propertyConceptLabel : propertyInfo.getName();
+        propertyConceptLabel != null ? propertyConceptLabel : name2;
     return new Pair<>(propertyName, propertyLabel);
   }
 
@@ -175,6 +197,14 @@ public class BaseGenerator {
     @Override
     public String toString() {
       return label;
+    }
+
+    public boolean isFromMany() {
+      return this == MANY_TO_ONE || this == MANY_TO_MANY;
+    }
+
+    public boolean isToMany() {
+      return this == ONE_TO_MANY || this == MANY_TO_MANY;
     }
   }
 }

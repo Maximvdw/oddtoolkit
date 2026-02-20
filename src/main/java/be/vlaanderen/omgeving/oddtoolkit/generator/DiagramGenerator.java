@@ -44,7 +44,8 @@ public abstract class DiagramGenerator extends ClassGenerator {
       return;
     }
     for (DiagramStyle style : styles) {
-      if (style != null && style.uri != null && style.name != null && style.props != null) {
+      // Emit the classDef once per style name (props are shared even if multiple URIs map to the same style)
+      if (style != null && style.name != null && style.props != null) {
         builder.append("classDef ").append(style.name).append(" ");
         int i = 0;
         for (Map.Entry<String, Object> e : style.props.entrySet()) {
@@ -64,7 +65,16 @@ public abstract class DiagramGenerator extends ClassGenerator {
     }
     List<DiagramStyle> res = new ArrayList<>();
     diagramGeneratorProperties.getStyles()
-        .forEach(s -> res.add(new DiagramStyle(s.getName(), s.getUri(), s.getProps())));
+        .forEach(s -> {
+          // Support both 'uris' (list) and legacy single 'uri' entries
+          List<String> uris = s.getUris();
+          if (uris == null || uris.isEmpty()) {
+            if (s.getUri() != null) {
+              uris = List.of(s.getUri());
+            }
+          }
+          res.add(new DiagramStyle(s.getName(), uris, s.getProps()));
+        });
     return res;
   }
 
@@ -82,8 +92,12 @@ public abstract class DiagramGenerator extends ClassGenerator {
       return;
     }
     for (DiagramStyle style : styles) {
-      if (style != null && style.uri != null && style.name != null && style.props != null) {
-        stylesMap.put(style.uri, style.name);
+      if (style != null && style.uris != null && style.name != null && style.props != null) {
+        for (String uri : style.uris) {
+          if (uri != null) {
+            stylesMap.put(uri, style.name);
+          }
+        }
       }
     }
   }
@@ -168,7 +182,9 @@ public abstract class DiagramGenerator extends ClassGenerator {
    * Subclasses must implement this to render the diagram body (classes, relations, ...). The base
    * will call this during generation.
    */
-  protected abstract void renderContent(StringBuilder builder, String type);
+  protected void renderContent(StringBuilder builder, String type) {
+
+  }
 
   protected void saveToFile(String outputFile, String content) {
     if (outputFile == null) {
@@ -192,7 +208,7 @@ public abstract class DiagramGenerator extends ClassGenerator {
   /**
    * Minimal DTO that subclasses can use to provide style configuration.
    */
-  protected record DiagramStyle(String name, String uri, Map<String, Object> props) {
+  protected record DiagramStyle(String name, List<String> uris, Map<String, Object> props) {
 
   }
 }
