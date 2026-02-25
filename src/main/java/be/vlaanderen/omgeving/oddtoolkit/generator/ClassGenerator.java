@@ -24,44 +24,11 @@ public class ClassGenerator extends BaseGenerator {
   protected List<Clazz> classes = new ArrayList<>();
   protected List<Interface> interfaces = new ArrayList<>();
   protected List<Enum> enums = new ArrayList<>();
-  protected List<Filter<ClassGenerator>> filters = new ArrayList<>();
 
   public ClassGenerator(OntologyInfo ontologyInfo,
       ConceptSchemeInfo conceptSchemeInfo, List<AbstractAdapter<?>> adapters) {
     super(ontologyInfo, conceptSchemeInfo, adapters);
 
-    filters.add(new Filter<>("interfaces") {
-      @Override
-      void filter(ClassGenerator generator) {
-        generator.filterInterfaces();
-        generator.filterInterfaceProperties();
-      }
-    });
-    filters.add(new Filter<>("enums") {
-      @Override
-      void filter(ClassGenerator generator) {
-        generator.filterEnums();
-      }
-    });
-    filters.add(new Filter<>("inheritedProperties") {
-      @Override
-      void filter(ClassGenerator generator) {
-        generator.filterInheritedProperties();
-      }
-    });
-    filters.add(new Filter<>("superclasses") {
-      @Override
-      void filter(ClassGenerator generator) {
-        generator.filterSuperClasses();
-      }
-    });
-    filters.add(new Filter<>("inverseProperties") {
-      @Override
-      void filter(ClassGenerator generator) {
-        generator.getClasses().forEach(generator::filterInverseProperties);
-        generator.getInterfaces().forEach(generator::filterInverseProperties);
-      }
-    });
   }
 
   @Override
@@ -72,9 +39,19 @@ public class ClassGenerator extends BaseGenerator {
     extractEnums();
     extractRelations();
     // Apply the filters in order
-    filters.forEach(filter -> filter.filter(this));
+    applyFilters();
     updateRanges();
     extractDataTypes();
+  }
+
+  public void applyFilters() {
+    filterInterfaces();
+    filterInterfaceProperties();
+    filterEnums();
+    filterInheritedProperties();
+    filterSuperClasses();
+    getClasses().forEach(this::filterInverseProperties);
+    getInterfaces().forEach(this::filterInverseProperties);
   }
 
   private void updateRanges() {
@@ -88,7 +65,8 @@ public class ClassGenerator extends BaseGenerator {
         ClassInfo nearestClass = getNearestClass(attribute.getRange().getClassInfo());
         if (nearestClass != null) {
           attribute.setRange(findNeareast(nearestClass));
-          attribute.setDataType(new DataType(attribute.getRange().getName(), attribute.getRange().getUri()));
+          attribute.setDataType(
+              new DataType(attribute.getRange().getName(), attribute.getRange().getUri()));
         }
       }
     }));
@@ -151,7 +129,8 @@ public class ClassGenerator extends BaseGenerator {
             if (rangeClass != null) {
               // Find the clazz or interface for the range class
               attribute.setRange(findNeareast(rangeClass));
-              attribute.setDataType(new DataType(attribute.getRange().getName(), attribute.getRange().getUri()));
+              attribute.setDataType(
+                  new DataType(attribute.getRange().getName(), attribute.getRange().getUri()));
             }
           }
         }
@@ -240,15 +219,20 @@ public class ClassGenerator extends BaseGenerator {
         .filter(a -> a.getPropertyInfo() != null
             && a.getPropertyInfo() instanceof PropertyInfo propertyInfo
             && propertyInfo.getInverseOf() != null)
-        .forEach(a -> {
-          PropertyInfo propertyInfo = (PropertyInfo) a.getPropertyInfo();
-          getAllClasses().stream()
-              .flatMap(c -> c.getProperties().stream())
-              .filter(ip -> ip.getUri().equals(propertyInfo.getInverseOf()))
+        .forEach(attribute -> {
+          PropertyInfo propertyInfo = (PropertyInfo) attribute.getPropertyInfo();
+          classes
+              .stream()
+              .flatMap(c -> c.getAttributes().stream())
+              .filter(p -> p.getUri().equals(propertyInfo.getInverseOf()))
               .findFirst()
-              .ifPresent(inverseProperty -> {
+              .ifPresent(inverseAttribute -> {
+                PropertyInfo inverseProperty = (PropertyInfo) inverseAttribute.getPropertyInfo();
                 propertyInfo.setCardinalityFrom(inverseProperty.getCardinalityTo());
+                attribute.setCardinality(getCardinality(propertyInfo));
                 inverseProperty.setCardinalityFrom(propertyInfo.getCardinalityTo());
+                inverseAttribute.setCardinality(getCardinality(inverseProperty));
+
                 // Check that one of the properties has a comment, if not we can keep either one of them
                 if ((propertyInfo.getComment() == null || propertyInfo.getComment().isEmpty()) && (
                     inverseProperty.getComment() == null || inverseProperty.getComment()
@@ -271,13 +255,15 @@ public class ClassGenerator extends BaseGenerator {
           .toList());
       return;
     }
-    // Remove inverse properties if they don't have a comment
+    // Remove inverse properties if they don't have a comment or many to one
     List<Attribute> remainingProperties = clazz.getAttributes()
         .stream()
         .filter(
             p -> {
               PropertyInfo propertyInfo = (PropertyInfo) p.getPropertyInfo();
-              return propertyInfo.getInverseOf() == null || (propertyInfo.getComment() != null && !propertyInfo.getComment().isEmpty());
+              return (propertyInfo.getInverseOf() == null || (propertyInfo.getComment() != null
+                  && !propertyInfo.getComment().isEmpty()))
+                  && !p.getCardinality().equals(Cardinality.ONE_TO_MANY);
             })
         .toList();
     clazz.setAttributes(remainingProperties);
@@ -525,6 +511,9 @@ public class ClassGenerator extends BaseGenerator {
   }
 
   protected String getReadableDataType(String dataTypeUri) {
+    if (dataTypeUri == null) {
+      return "String";
+    }
     // Try to find a class, interface, enum first
     Clazz clazz = getClass(getNearestClass(dataTypeUri));
     if (clazz != null) {
@@ -605,22 +594,6 @@ public class ClassGenerator extends BaseGenerator {
   }
 
   @Getter
-  protected abstract static class Filter<T extends ClassGenerator> {
-
-    private final String name;
-
-    public Filter(String name) {
-      this.name = name;
-    }
-
-    public Filter() {
-      this(null);
-    }
-
-    abstract void filter(T generator);
-  }
-
-  @Getter
   @Setter
   protected static class Clazz {
 
@@ -630,7 +603,16 @@ public class ClassGenerator extends BaseGenerator {
     private String name;
     private List<Attribute> attributes = new ArrayList<>();
 
-    public Clazz() {}
+    public Clazz() {
+    }
+
+    public Clazz(Clazz clazz) {
+      this.classInfo = clazz.getClassInfo();
+      this.name = clazz.getName();
+      this.attributes = new ArrayList<>(clazz.getAttributes());
+      this.interfaces = new ArrayList<>(clazz.getInterfaces());
+      this.extendsClass = clazz.getExtendsClass();
+    }
 
     public String getUri() {
       return classInfo != null ? classInfo.getUri() : null;
@@ -673,24 +655,35 @@ public class ClassGenerator extends BaseGenerator {
     private boolean primaryKey;
     private boolean nullable;
 
+    public String getUri() {
+      return propertyInfo != null ? propertyInfo.getUri() : null;
+    }
+
     public String toString() {
       return name;
+    }
+
+    public boolean equals(Attribute attribute) {
+      return attribute.getUri().equals(getUri()) && attribute.getDomain().getUri()
+          .equals(getDomain().getUri()) && attribute.getRange() != null && getRange() != null
+          && attribute.getRange().getUri().equals(getRange().getUri());
     }
   }
 
   @Getter
   @Setter
   protected static class DataType {
-      private String name;
-      private String uri;
 
-      public DataType(String name, String uri) {
-        this.name = name;
-        this.uri = uri;
-      }
+    private String name;
+    private String uri;
 
-      public String toString() {
-        return name != null ? name : uri;
-      }
+    public DataType(String name, String uri) {
+      this.name = name;
+      this.uri = uri;
+    }
+
+    public String toString() {
+      return name != null ? name : uri;
+    }
   }
 }

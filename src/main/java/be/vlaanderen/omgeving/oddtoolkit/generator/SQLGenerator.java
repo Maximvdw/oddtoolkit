@@ -49,11 +49,24 @@ public class SQLGenerator extends SchemaGenerator {
   private void generateTables(StringBuilder sb) {
     getTables().forEach(table -> {
       sb.append("-- ").append(table.getUri()).append("\n");
+      if (table.getTableType() != TableType.REGULAR) {
+        sb.append("-- ").append("Table type: ").append(table.getTableType()).append("\n");
+        if (table.getTableType() == TableType.JOIN) {
+          Relation relation = table.getRelationByAttribute(table.getColumns().getFirst());
+          sb.append("-- ").append("Original relation: ").append(relation.getName()).append("\n");
+        }
+      }
       sb.append("CREATE TABLE ").append(table.getName()).append(" (\n");
       int i = 0;
       for (Column column : table.getColumns()) {
         if (i++ > 0) {
           sb.append(",\n");
+        }
+        if (column.isForeignKey()) {
+          Relation relation = table.getRelationByAttribute(column);
+          sb.append("  -- ").append("Foreign key referencing ")
+              .append(relation.getTo().getName()).append("(").append(relation.getToColumn().getName())
+              .append(")").append("\n");
         }
         sb.append("  ").append(column.getName()).append(" ").append(column.getDataType());
       }
@@ -70,14 +83,6 @@ public class SQLGenerator extends SchemaGenerator {
         }
         sb.append(")");
       }
-      List<Column> foreignKeys = table.getColumns().stream().filter(Column::isForeignKey).toList();
-      for (Column fk : foreignKeys) {
-        table.getRelations()
-            .stream().filter(r -> r.getFromColumn().equals(fk)).findFirst().ifPresent(
-                relation -> sb.append(",\n  FOREIGN KEY (").append(fk.getName()).append(") REFERENCES ")
-                    .append(relation.getTo().getName()).append("(")
-                    .append(relation.getToColumn().getName()).append(")"));
-      }
       sb.append("\n);\n\n");
 
       // Create comments ON TABLE and ON COLUMN for documentation
@@ -91,6 +96,22 @@ public class SQLGenerator extends SchemaGenerator {
       }
       sb.append("\n");
       sb.append("----------------------------------------------------------------------\n\n");
+    });
+
+    sb.append("-- Foreign key constraints\n\n");
+
+    // Create foreign key constraints after all tables are created to avoid referencing tables that are not yet defined
+    getTables().forEach(table -> {
+      List<Column> foreignKeys = table.getColumns().stream().filter(Column::isForeignKey).toList();
+      for (Column fk : foreignKeys) {
+        table.getRelations()
+            .stream()
+            .filter(relation -> relation.getFromColumn().equals(fk))
+            .forEach(relation -> sb.append("ALTER TABLE ").append(table.getName())
+              .append(" ADD FOREIGN KEY (").append(fk.getName()).append(") REFERENCES ")
+              .append(relation.getTo().getName()).append("(")
+              .append(relation.getToColumn().getName()).append(");\n"));
+      }
     });
   }
 

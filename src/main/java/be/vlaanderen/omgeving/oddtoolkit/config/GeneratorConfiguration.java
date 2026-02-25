@@ -84,10 +84,11 @@ public class GeneratorConfiguration {
   public ShaclGenerator shaclGenerator(OntologyInfo ontologyInfo,
       ConceptSchemeInfo conceptSchemeInfo,
       ApplicationContext context,
-      GeneratorProperties generatorProperties) {
+      GeneratorProperties generatorProperties,
+      ShaclGeneratorProperties shaclGeneratorProperties) {
     Map<String, AbstractAdapter<?>> adapterBeans = (Map) context.getBeansOfType(AbstractAdapter.class);
     List<AbstractAdapter<?>> adapters = selectAdapters(adapterBeans, generatorProperties.adaptersFor("shacl"));
-    return new ShaclGenerator(ontologyInfo, conceptSchemeInfo, adapters);
+    return new ShaclGenerator(ontologyInfo, conceptSchemeInfo, adapters, shaclGeneratorProperties);
   }
 
   private List<AbstractAdapter<?>> selectAdapters(Map<String, AbstractAdapter<?>> adapterBeans, List<String> requestedAdapterNames) {

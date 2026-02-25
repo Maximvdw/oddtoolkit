@@ -1,8 +1,12 @@
 package be.vlaanderen.omgeving.oddtoolkit.generator;
 
 import be.vlaanderen.omgeving.oddtoolkit.adapter.AbstractAdapter;
+import be.vlaanderen.omgeving.oddtoolkit.config.ShaclGeneratorProperties;
 import be.vlaanderen.omgeving.oddtoolkit.model.ConceptSchemeInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.OntologyInfo;
+import java.io.FileOutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -17,19 +21,52 @@ import org.apache.jena.rdf.model.Statement;
 import org.apache.jena.vocabulary.OWL;
 import org.apache.jena.vocabulary.RDF;
 import org.apache.jena.vocabulary.RDFS;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * SHACL generator that builds shapes from the ontology's inferred model.
- * Configurable via `generators.shacl` in application.yml (list of adapter bean names).
+ * SHACL generator that builds shapes from the ontology
  */
 public class ShaclGenerator extends BaseGenerator {
 
   private static final String SH = "http://www.w3.org/ns/shacl#";
+  private final ShaclGeneratorProperties shaclGeneratorProperties;
+  private final Logger logger = LoggerFactory.getLogger(ShaclGenerator.class);
 
   public ShaclGenerator(OntologyInfo ontologyInfo,
       ConceptSchemeInfo conceptSchemeInfo,
-      List<AbstractAdapter<?>> adapters) {
+      List<AbstractAdapter<?>> adapters,
+      ShaclGeneratorProperties shaclGeneratorProperties) {
     super(ontologyInfo, conceptSchemeInfo, adapters);
+    this.shaclGeneratorProperties = shaclGeneratorProperties;
+  }
+
+  @Override
+  public void run() {
+    super.run();
+    Model shacl = generate();
+    // Save to file
+    if (getOutputFile() != null) {
+      logger.info("Writing SHACL shapes to {}", getOutputFile());
+      saveToFile(getOutputFile(), shacl);
+    } else {
+      shacl.write(System.out, "TURTLE");
+    }
+  }
+
+  protected void saveToFile(String outputFile, Model shacl) {
+    try {
+      // Ensure parent directories exist
+      Path outputPath = java.nio.file.Paths.get(outputFile);
+      Files.createDirectories(outputPath.getParent());
+      shacl.write(new FileOutputStream(outputFile), "TURTLE");
+    } catch (Exception e) {
+      logger.error("Error writing SHACL shapes to file: {}", e.getMessage(), e);
+    }
+  }
+
+  protected String getOutputFile() {
+    return shaclGeneratorProperties.getOutputFile();
   }
 
   /**
@@ -38,7 +75,7 @@ public class ShaclGenerator extends BaseGenerator {
    */
   public Model generate() {
     OntologyInfo info = getOntologyInfo();
-    Model ontology = info.getInferredModel() != null ? info.getInferredModel() : info.getModel();
+    Model ontology = info.getModel();
     if (ontology == null) {
       return ModelFactory.createDefaultModel();
     }
@@ -47,6 +84,8 @@ public class ShaclGenerator extends BaseGenerator {
     shacl.setNsPrefix("sh", SH);
     shacl.setNsPrefix("owl", OWL.NS);
     shacl.setNsPrefix("rdfs", RDFS.getURI());
+    // Copy all prefixes from the ontology
+    ontology.getNsPrefixMap().forEach(shacl::setNsPrefix);
 
     // iterate over all classes in the ontology and create node shapes
     Iterator<Resource> classes = ontology.listResourcesWithProperty(RDF.type, OWL.Class);
@@ -179,8 +218,16 @@ public class ShaclGenerator extends BaseGenerator {
 
     addMinCountIfNeeded(restriction, ps, shacl);
     addCardinality(restriction, ps, shacl);
+    addComment(restriction, ps, shacl);
 
     nodeShape.addProperty(shaclProp("property", shacl), ps);
+  }
+
+  private void addComment(Resource from, Resource to, Model shacl) {
+    Statement commentStmt = from.getProperty(RDFS.comment);
+    if (commentStmt != null && commentStmt.getObject().isLiteral()) {
+      to.addProperty(shacl.createProperty(SH + "description"), commentStmt.getLiteral());
+    }
   }
 
   private void generateNodeShape(Resource cls, Model ontology, Model shacl) {

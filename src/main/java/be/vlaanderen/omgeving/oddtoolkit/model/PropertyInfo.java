@@ -70,8 +70,11 @@ public class PropertyInfo extends AbstractInfo {
     if (resource.hasProperty(OWL2.someValuesFrom)) {
       // Set the range types
       resource.listProperties(OWL2.someValuesFrom).forEachRemaining(stmt -> {
-        if (stmt.getObject().isResource()) {
+        if (stmt.getObject().isResource() && stmt.getObject().asResource().getURI() != null) {
           range.add(stmt.getObject().asResource().getURI());
+        } else {
+          throw new IllegalArgumentException(
+              "Invalid range for property: " + getUri() + ". Range must be a resource with a valid URI. Found: " + stmt.getObject());
         }
       });
     } else if (resource.hasProperty(OWL2.allValuesFrom)) {

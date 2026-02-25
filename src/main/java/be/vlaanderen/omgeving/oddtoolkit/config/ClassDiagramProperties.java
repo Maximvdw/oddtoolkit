@@ -13,4 +13,5 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "generators.class-diagram")
 public class ClassDiagramProperties {
   private String outputFile;
+  private boolean filterInterfaces = true;
 }

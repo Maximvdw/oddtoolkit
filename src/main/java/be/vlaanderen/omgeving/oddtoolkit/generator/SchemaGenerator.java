@@ -7,17 +7,20 @@ import be.vlaanderen.omgeving.oddtoolkit.config.OntologyConfiguration.ExtraPrope
 import be.vlaanderen.omgeving.oddtoolkit.config.SchemaGeneratorProperties;
 import be.vlaanderen.omgeving.oddtoolkit.model.ConceptSchemeInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.OntologyInfo;
+import be.vlaanderen.omgeving.oddtoolkit.model.PropertyInfo;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
+import org.apache.jena.atlas.lib.Pair;
 
 @Getter
 public abstract class SchemaGenerator extends DiagramGenerator {
 
   private final List<Table> tables = new ArrayList<>();
   private final OntologyConfiguration ontologyConfiguration;
-  private final SchemaGeneratorProperties generatorProperties;
+  private final SchemaGeneratorProperties schemaGeneratorProperties;
 
   public SchemaGenerator(OntologyInfo ontologyInfo,
       ConceptSchemeInfo conceptSchemeInfo, List<AbstractAdapter<?>> adapters,
@@ -25,14 +28,20 @@ public abstract class SchemaGenerator extends DiagramGenerator {
       SchemaGeneratorProperties generatorProperties) {
     super(ontologyInfo, conceptSchemeInfo, adapters, diagramGeneratorProperties);
     this.ontologyConfiguration = ontologyInfo.getConfig();
-    this.generatorProperties = generatorProperties;
+    this.schemaGeneratorProperties = generatorProperties;
   }
 
   @Override
   public void run() {
     super.run();
+    updateEnums();
     extractTables();
     extractTableRelations();
+  }
+
+  private void updateEnums() {
+    this.enums
+        .forEach(e -> e.setName(toSnakeCase(e.getName()).toLowerCase()));
   }
 
   private String getIdentifierColumnUri() {
@@ -45,13 +54,46 @@ public abstract class SchemaGenerator extends DiagramGenerator {
   }
 
   protected void extractTableRelations() {
-    tables.forEach(this::extractColumnRelations);
-
     // Extract inheritance relations and tables
     tables.forEach(this::extractInheritance);
+    // Extract identity tables if enabled
+    if (schemaGeneratorProperties.getIdentityTables().isEnabled()) {
+      extractIdentityTables();
+    }
+    // Extract column relations (after inheritance to ensure correct names)
+    tables.forEach(this::extractColumnRelations);
 
     // Create join tables for many-to-many relations
     new ArrayList<>(tables).forEach(this::extractManyToManyRelations);
+
+    if (schemaGeneratorProperties.getIdentityTables().isEnabled()) {
+      updateIdentifierReferences();
+    }
+  }
+
+  private void updateIdentifierReferences() {
+    tables.stream().filter(t -> t.getExtendsClass() != null
+            && ((Table) t.getExtendsClass()).getTableType() == TableType.IDENTITY)
+        .forEach(table -> {
+          tables.forEach(otherTable -> {
+            otherTable.getRelations().forEach(relation -> {
+              if (relation.getTo().equals(table)) {
+                relation.setTo((Table) table.getExtendsClass());
+                Column targetColumn = ((Table) table.getExtendsClass()).getColumnByUri(
+                    getIdentifierColumnUri());
+                relation.setToColumn(targetColumn);
+              } else if (relation.getFrom().equals(table) && !relation.getTo().equals(table.getExtendsClass())) {
+                relation.setFrom((Table) table.getExtendsClass());
+                Column targetColumn = ((Table) table.getExtendsClass()).getColumnByUri(
+                    getIdentifierColumnUri());
+                relation.setToColumn(targetColumn);
+                // Move the relation to the correct table instance
+                relation.getFrom().getRelations().remove(relation);
+                ((Table) table.getExtendsClass()).getRelations().add(relation);
+              }
+            });
+          });
+        });
   }
 
   private void extractStyles(Table table) {
@@ -64,23 +106,69 @@ public abstract class SchemaGenerator extends DiagramGenerator {
     // Extract tables from concrete classes
     this.classes
         .forEach(concreteClass -> {
-          tables.add(new Table(concreteClass));
+          addTable(new Table(concreteClass));
         });
     // Extract tables from interfaces
     this.interfaces
         .forEach(interfaceClass -> {
-          tables.add(new Table(interfaceClass));
+          addTable(new Table(interfaceClass));
         });
-    // Now extract columns
+    // Now extract styles
     tables.forEach(this::extractStyles);
+    tables.sort(Comparator.comparingInt(t -> -t.getClassInfo().getSuperClasses().size()));
+  }
+
+  private void extractIdentityTables() {
+    // Create identity tables if a class has a composite identifier
+    List<Table> identityTables = new ArrayList<>();
+    tables.forEach(table -> {
+      int primaryKeys = table.getColumns().stream().filter(Column::isPrimaryKey).toList().size();
+      // Only create a table if pks > 1 and there is no super class with an identity table
+      if (primaryKeys > 1) {
+        Table identityTable = new Table(table);
+        identityTable.setDiagramStyle(table.getDiagramStyle());
+        identityTable.setTableType(TableType.IDENTITY);
+        identityTable.setName(table.getName() + "_" + schemaGeneratorProperties.getIdentityTables()
+            .getTableNameSuffix());
+        identityTable.setColumns(new ArrayList<>());
+        // Add the identifier column to the identity table
+        Column identifierColumn = table.getColumnByUri(getIdentifierColumnUri());
+        Column identityColumnCopy = identifierColumn.copy();
+        identityColumnCopy.setDomain(identityTable);
+        identityTable.addColumn(identityColumnCopy);
+        identityTables.add(identityTable);
+        // Update the original table to reference the identity table
+        identifierColumn.setRange(identityTable);
+        identifierColumn.setForeignKey(true);
+        // Move extends relation to the identity table
+        identityTable.setExtendsClass(table.getExtendsClass());
+        table.setExtendsClass(identityTable);
+      }
+    });
+    identityTables.forEach(this::addTable);
+    tables.sort(Comparator.comparingInt(t -> -t.getClassInfo().getSuperClasses().size()));
   }
 
   private String getJoinTableName(Relation relation) {
-    return toSnakeCase(relation.getFrom().getName() + "_" + relation.getTo().getName());
+    // Get the from table and to table names
+    // Remove duplicate parts in the "to" table and add plural (e.g. "proces" and "proces_variable" -> "proces_variables")
+    Table tableFrom = getTableByClazz(relation.getFrom(), false);
+    Table tableTo = getTableByClazz(relation.getTo(), false);
+    String fromName = tableFrom.getName();
+    String toName = tableTo.getName();
+    if (toName.startsWith(fromName)) {
+      toName = toName.substring(fromName.length());
+    }
+    // If the toName is now equal to the fromName change toName to the relation
+    if (toName.isEmpty() || toName.equals(fromName)) {
+      toName = relation.getName() != null ? relation.getName() : "relation";
+    }
+    return toSnakeCase("rel_" + fromName + "_" + toName).toLowerCase();
   }
 
   private Table createJoinTable(Relation relation) {
     Table joinTable = new Table();
+    joinTable.setTableType(TableType.JOIN);
     joinTable.setDiagramStyle(relation.getFrom().getDiagramStyle());
     joinTable.setClassInfo(relation.getFrom().getClassInfo());
     joinTable.setName(getJoinTableName(relation));
@@ -104,15 +192,20 @@ public abstract class SchemaGenerator extends DiagramGenerator {
         .toList();
     joinColumns.addAll(leftColumns);
     joinColumns.addAll(rightColumns);
+    if (leftColumns.isEmpty() || rightColumns.isEmpty()) {
+      throw new IllegalStateException(
+          "Cannot create join table for relation " + relation.getName()
+              + " because one of the tables does not have a primary key");
+    }
     // Set all columns as FK in the join table
     joinColumns.forEach(c -> c.setForeignKey(true));
     joinTable.setColumns(joinColumns);
-    tables.add(joinTable);
+    addTable(joinTable);
     // Create relations from original tables to join table
     createJoinTableRelation(relation.getName(), relation.getFrom(), joinTable,
-        relation.getFromColumn());
+        leftColumns);
     createJoinTableRelation(relation.getName(), relation.getTo(), joinTable,
-        relation.getToColumn());
+        rightColumns);
     return joinTable;
   }
 
@@ -126,10 +219,12 @@ public abstract class SchemaGenerator extends DiagramGenerator {
     relation.getFrom().getColumns()
         .stream()
         .filter(c -> c.equals(relation.getFromColumn()) || c.equals(relation.getToColumn()))
+        .filter(Column::isForeignKey)
         .forEach(c -> relation.getFrom().removeColumn(c));
     relation.getTo().getColumns()
         .stream()
         .filter(c -> c.equals(relation.getFromColumn()) || c.equals(relation.getToColumn()))
+        .filter(Column::isForeignKey)
         .forEach(c -> relation.getTo().removeColumn(c));
     // Remove the original relation
     relation.getFrom().getRelations().remove(relation);
@@ -138,7 +233,7 @@ public abstract class SchemaGenerator extends DiagramGenerator {
 
   private void extractManyToManyRelations(Table table) {
     // First determine if there are relations that need to be merged
-    if (generatorProperties.getMergeJoinTables().isEnabled()) {
+    if (schemaGeneratorProperties.getMergeJoinTables().isEnabled()) {
       // Find all relations that are many-to-many to the same target
       List<Relation> relations = new ArrayList<>(table.getRelations());
       relations
@@ -159,18 +254,20 @@ public abstract class SchemaGenerator extends DiagramGenerator {
               enumType.setValues(relationsToTarget.stream().map(r -> {
                 String relationName = r.getName() != null ? r.getName() : "relation";
                 EnumValue enumValue = new EnumValue();
-                enumValue.setName(toSnakeCase(relationName));
+                enumValue.setName(toSnakeCase(relationName).toUpperCase());
                 return enumValue;
               }).toList());
               enums.add(enumType);
               Table joinTable = createJoinTable(relationsToTarget.getFirst());
               // Add merge type column
               Column mergeTypeColumn = new Column();
-              mergeTypeColumn.setName(generatorProperties.getMergeJoinTables().getAttributeName());
+              mergeTypeColumn.setName(
+                  schemaGeneratorProperties.getMergeJoinTables().getAttributeName());
               mergeTypeColumn.setDataType(new DataType(enumType.getName(), enumType.getUri()));
               mergeTypeColumn.setForeignKey(false);
               mergeTypeColumn.setNullable(false);
               mergeTypeColumn.setPrimaryKey(true);
+              mergeTypeColumn.setDomain(joinTable);
               joinTable.addColumn(mergeTypeColumn);
               // Remove columns of the original relation(s)
               relationsToTarget.forEach(this::cleanRelation);
@@ -181,11 +278,6 @@ public abstract class SchemaGenerator extends DiagramGenerator {
     List<Relation> relations = new ArrayList<>(table.getRelations());
     relations.forEach(relation -> {
       if (relation.getCardinality() == Cardinality.MANY_TO_MANY) {
-        Relation inverseRelation = relation.getTo().getRelations().stream()
-            .filter(r -> r.getTo().equals(relation.getFrom()) && r.getToColumn().equals(
-                relation.getFromColumn()) && r.getFromColumn().equals(relation.getToColumn()))
-            .findFirst()
-            .orElse(null);
         createJoinTable(relation);
         cleanRelation(relation);
       }
@@ -193,41 +285,49 @@ public abstract class SchemaGenerator extends DiagramGenerator {
   }
 
   private void createJoinTableRelation(String name, Table targetTable, Table joinTable,
-      Column toColumn) {
-    Relation toRelation = new Relation();
-    toRelation.setFrom(joinTable);
-    toRelation.setTo(targetTable);
-    toRelation.setFromColumn(toColumn);
-    toRelation.setToColumn(targetTable.getColumnByUri(getIdentifierColumnUri()));
-    toRelation.setCardinality(Cardinality.MANY_TO_ONE);
-    toRelation.setName(name);
-    joinTable.getRelations().add(toRelation);
+      List<Column> joinColumns) {
+    joinColumns.forEach(joinColumn -> {
+      Relation toRelation = new Relation();
+      toRelation.setFrom(joinTable);
+      toRelation.setTo(targetTable);
+      toRelation.setFromColumn(joinColumn);
+      toRelation.setToColumn(targetTable.getColumnByUri(joinColumn.getUri()));
+      toRelation.setCardinality(Cardinality.MANY_TO_ONE);
+      toRelation.setName(name);
+      joinTable.getRelations().add(toRelation);
+    });
   }
 
   private void extractInheritance(Table table) {
-    table.getClassInfo().getSuperClasses().forEach(superClass -> {
-      Table parentTable = getTableByClazz(getClass(superClass));
-      if (parentTable == null) {
-        return; // Skip if the parent table is not found
-      }
-      Column targetColumn = parentTable.getColumnByUri(getIdentifierColumnUri());
-      // Add column
-      Column column = new Column();
-      column.setName(toSnakeCase(table.getName()) + "_" + targetColumn.getName());
-      column.setForeignKey(true);
-      column.setPrimaryKey(true);
-      column.setDataType(targetColumn.getDataType());
+    Table parentTable = (Table) table.getExtendsClass();
+    if (parentTable == null) {
+      return; // Skip if the parent table is not found
+    }
+    Column targetColumn = parentTable.getColumnByUri(getIdentifierColumnUri());
+    // Add column
+    Column column = table.getColumnByUri(targetColumn.getUri());
+    if (column == null) {
+      column = new Column();
+      column.setPropertyInfo(targetColumn.getPropertyInfo());
+      column.setDomain(table);
       table.addColumn(column);
+    }
+    column.setName(toSnakeCase(parentTable.getName()) + "_" + targetColumn.getName());
+    column.setForeignKey(true);
+    column.setPrimaryKey(true);
+    column.setDataType(new DataType(targetColumn.getDataType().getName(),
+        targetColumn.getDataType().getUri()));
+    column.setCardinality(Cardinality.MANY_TO_ONE);
 
-      // Add relation
-      Relation relation = new Relation();
-      relation.setFrom(table);
-      relation.setFromColumn(column);
-      relation.setTo(parentTable);
-      relation.setToColumn(targetColumn);
-      relation.setCardinality(Cardinality.ONE_TO_MANY);
-      table.getRelations().add(relation);
-    });
+    // Add relation
+    Relation relation = new Relation();
+    relation.setFrom(table);
+    relation.setFromColumn(column);
+    relation.setTo(parentTable);
+    relation.setToColumn(targetColumn);
+    relation.setCardinality(Cardinality.ONE_TO_MANY);
+    table.getRelations().add(relation);
+    table.setExtendsClass(parentTable);
   }
 
   private void extractColumnRelations(Table table) {
@@ -238,27 +338,43 @@ public abstract class SchemaGenerator extends DiagramGenerator {
       if (attribute.getRange() != null) {
         // Get a target table
         Clazz nearestClass = attribute.getRange();
-        Table targetTable = getTableByClazz(nearestClass);
+        Table targetTable = getTableByClazz(nearestClass, false);
+        // Skip if the target is null or an identity table
         if (targetTable == null) {
           continue; // Skip if the target table is not found
         }
+        String targetName = targetTable.getName();
+        targetTable = getTableByClazz(targetTable, true);
+
         // Update the data type of the column to match the identifier column of the target table
         Column column = table.getColumnByAttribute(attribute);
         Column targetColumn = targetTable.getColumnByUri(getIdentifierColumnUri());
         if (column != null && targetColumn != null) {
+          // Skip if the relation already exists
+          boolean relationExists = table.getRelations().stream()
+              .anyMatch(
+                  r -> r.getFromColumn().equals(column) && r.getToColumn().equals(targetColumn));
+          if (relationExists) {
+            continue;
+          }
           column.setDataType(targetColumn.getDataType());
-          column.setName(column.getName() + "_" + targetColumn.getName());
+          // Only change the name if its not a reference to the identity table
+          if (!(nearestClass instanceof Table
+              && ((Table) nearestClass).getTableType().equals(TableType.IDENTITY))) {
+            column.setName(column.getName());
+          }
           column.setForeignKey(true);
         }
 
         // Determine the PK of the related table to use as FK
-        String relationName = attribute.getName();
+        Pair<String, String> propertyNameAndLabel = getPropertyNameAndLabel(
+            (PropertyInfo) attribute.getPropertyInfo());
         Relation relation = new Relation();
-        relation.setName(toSnakeCase(relationName));
+        relation.setName(toSnakeCase(propertyNameAndLabel.getLeft()) + "_" + targetName);
         relation.setFrom(table);
         relation.setTo(targetTable);
-        relation.setFromColumn(table.getColumnByAttribute(attribute));
-        relation.setToColumn(table.getColumnByUri(getIdentifierColumnUri()));
+        relation.setFromColumn(column);
+        relation.setToColumn(targetColumn);
         relation.setCardinality(attribute.getCardinality());
         table.getRelations().add(relation);
       }
@@ -266,13 +382,23 @@ public abstract class SchemaGenerator extends DiagramGenerator {
   }
 
   protected Table getTableByClazz(Clazz clazz) {
+    return getTableByClazz(clazz, false);
+  }
+
+  protected Table getTableByClazz(Clazz clazz, boolean identifier) {
     if (clazz == null) {
       return null;
     }
-    return tables.stream()
+    // If there are multiple tables for the same class, prefer the one where the pk is not a fk
+    // else fallback to any table with the same class info
+    List<Table> candidateTables = tables.stream()
         .filter(t -> t.getClassInfo().equals(clazz.getClassInfo()))
+        .toList();
+    return candidateTables.stream()
+        .filter(t -> !identifier || t.getColumnByUri(getIdentifierColumnUri()) == null
+            || !t.getColumnByUri(getIdentifierColumnUri()).isForeignKey())
         .findFirst()
-        .orElse(null);
+        .orElse(candidateTables.isEmpty() ? null : candidateTables.getFirst());
   }
 
   /**
@@ -281,7 +407,7 @@ public abstract class SchemaGenerator extends DiagramGenerator {
    * @param type The XSD data type URI (e.g., "http://www.w3.org/2001/XMLSchema#string")
    * @return The corresponding SQL data type (e.g., "VARCHAR")
    */
-  protected String xsdToSQL(String type) {
+  protected static String xsdToSQL(String type) {
     if (type == null) {
       return "VARCHAR"; // Default to VARCHAR if type is unknown
     }
@@ -291,9 +417,21 @@ public abstract class SchemaGenerator extends DiagramGenerator {
       case "http://www.w3.org/2001/XMLSchema#decimal" -> "DECIMAL";
       case "http://www.w3.org/2001/XMLSchema#boolean" -> "BOOLEAN";
       case "http://www.w3.org/2001/XMLSchema#date" -> "DATE";
-      case "http://www.w3.org/2001/XMLSchema#dateTime" -> "DATETIME";
+      case "http://www.w3.org/2001/XMLSchema#dateTime" -> "TIMESTAMP";
       default -> "VARCHAR"; // Fallback for unrecognized types
     };
+  }
+
+  protected void addTable(Table table) {
+    // Check if there is table with the same name
+    if (tables.stream().anyMatch(t -> t.getName().equals(table.getName()))) {
+      throw new IllegalArgumentException("Duplicate table name: " + table.getName());
+    }
+    tables.add(table);
+  }
+
+  protected enum TableType {
+    REGULAR, IDENTITY, JOIN
   }
 
   @Getter
@@ -302,13 +440,19 @@ public abstract class SchemaGenerator extends DiagramGenerator {
 
     private List<Relation> relations = new ArrayList<>();
     private String diagramStyle;
+    private TableType tableType = TableType.REGULAR;
 
     public Table() {
     }
 
     public Table(Clazz clazz) {
+      super(clazz);
       setClassInfo(clazz.getClassInfo());
       setName(toSnakeCase(clazz.getName()));
+      setAttributes(new ArrayList<>());
+      if (getExtendsClass() != null) {
+        setExtendsClass(new Table(getExtendsClass()));
+      }
       List<Column> columns = clazz.getAttributes()
           .stream()
           .map(Column::new)
@@ -358,6 +502,14 @@ public abstract class SchemaGenerator extends DiagramGenerator {
           .orElse(null);
     }
 
+    public Relation getRelationByAttribute(Attribute attribute) {
+      return getRelations().stream()
+          .filter(r -> r.getFromColumn() != null && r.getFromColumn().getPropertyInfo() != null
+              && r.getFromColumn().getPropertyInfo().equals(attribute.getPropertyInfo()))
+          .findFirst()
+          .orElse(null);
+    }
+
     public String toString() {
       return "Table{name='" + getName() + "', columns=" + getColumns() + ", relations=" + relations
           + "}";
@@ -376,11 +528,13 @@ public abstract class SchemaGenerator extends DiagramGenerator {
     public Column(Attribute attribute) {
       setPropertyInfo(attribute.getPropertyInfo());
       setDataType(attribute.getDataType());
-      setName(attribute.getName());
+      setDomain(attribute.getDomain());
+      setName(toSnakeCase(attribute.getName()));
       setRange(attribute.getRange());
       setPrimaryKey(attribute.isPrimaryKey());
       setNullable(attribute.isNullable());
       setCardinality(attribute.getCardinality());
+      getDataType().setName(xsdToSQL(getDataType().getUri()));
     }
 
     public String toString() {

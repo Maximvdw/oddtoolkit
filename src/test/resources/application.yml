@@ -53,14 +53,20 @@ generators:
     output-file: "target/test-cache/er-diagram/er-diagram.mmd"
   sql-generator:
     output-file: "target/test-cache/sql/schema.sql"
+  shacl-generator:
+    output-file: "target/test-cache/shacl/schema.ttl"
 
   schema-generator:
+    # Create stable identity tables for classes that have more than one primary key
+    identity-tables:
+      enabled: true
+      table-name-suffix: "identity"
+
     # Merge join tables if two classes have multiple relations to each other,
     # differentiated only by the property
     merge-join-tables:
       enabled: true
       attribute-name: "relation_type"
-
 
   diagram-generator:
     styles:
@@ -70,7 +76,9 @@ generators:
           fill: "#4bde2a"
           stroke: "#000000"
       - name: "procedure"
-        uri: "http://www.w3.org/ns/sosa/Procedure"
+        uris:
+          - "http://www.w3.org/ns/sosa/Procedure"
+          - "http://purl.org/net/p-plan#Variable"
         props:
           fill: "#ccffcc"
           stroke: "#000000"

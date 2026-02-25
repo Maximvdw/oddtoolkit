@@ -9,6 +9,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "generators.schema-generator")
 public class SchemaGeneratorProperties {
   private MergeJoinTables mergeJoinTables = new MergeJoinTables();
+  private IdentityTables identityTables = new IdentityTables();
 
   @Getter
   @Setter
@@ -16,6 +17,13 @@ public class SchemaGeneratorProperties {
 
     private boolean enabled = true;
     private String attributeName = "relation_type";
+  }
+
+  @Getter
+  @Setter
+  public static class IdentityTables {
+    private boolean enabled = true;
+    private String tableNameSuffix = "identity";
   }
 }
 

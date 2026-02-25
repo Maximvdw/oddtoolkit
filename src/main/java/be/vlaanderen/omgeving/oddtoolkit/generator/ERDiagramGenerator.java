@@ -8,8 +8,9 @@ import be.vlaanderen.omgeving.oddtoolkit.model.ConceptSchemeInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.OntologyInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.PropertyInfo;
 import java.util.List;
-import java.util.Locale;
+import lombok.Getter;
 
+@Getter
 public class ERDiagramGenerator extends SchemaGenerator {
 
   private final ERDiagramProperties generatorProperties;
