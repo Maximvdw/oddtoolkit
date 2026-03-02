@@ -25,6 +25,8 @@ public class OntologyConfiguration {
 
   private List<OverrideProperty> overrideProperties = new ArrayList<>();
 
+  private List<String> temporalProperties = new ArrayList<>();
+
   @Getter
   @Setter
   public static class OverrideProperty {

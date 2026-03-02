@@ -65,6 +65,13 @@
       <artifactId>assertj-core</artifactId>
       <version>3.27.4</version>
     </dependency>
+
+    <!-- Mermaid export to PNG -->
+    <dependency>
+      <groupId>com.microsoft.playwright</groupId>
+      <artifactId>playwright</artifactId>
+      <version>1.50.0</version>
+    </dependency>
   </dependencies>
 
   <build>

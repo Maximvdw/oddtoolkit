@@ -32,7 +32,7 @@ public class ClassDiagramGenerator extends DiagramGenerator {
     // Save to file
     if (getOutputFile() != null) {
       logger.info("Writing class diagram to {}", getOutputFile());
-      saveToFile(getOutputFile(), classDiagram);
+      saveDiagram(classDiagram);
     } else {
       System.out.println(classDiagram);
     }

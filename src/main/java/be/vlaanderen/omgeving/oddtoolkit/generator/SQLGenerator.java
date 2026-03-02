@@ -116,7 +116,7 @@ public class SQLGenerator extends SchemaGenerator {
   }
 
   private void generateEnumTypes(StringBuilder sb) {
-    getEnums()
+    getSchemaEnums()
         .forEach(type -> {
           if (type.getClassInfo() != null) {
             sb.append("-- ").append(type.getUri()).append("\n");

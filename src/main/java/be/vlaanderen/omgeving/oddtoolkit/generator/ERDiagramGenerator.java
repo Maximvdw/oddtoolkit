@@ -30,7 +30,7 @@ public class ERDiagramGenerator extends SchemaGenerator {
     super.run();
     String diagram = generate("erDiagram");
     if (getOutputFile() != null) {
-      saveToFile(getOutputFile(), diagram);
+      saveDiagram(diagram);
     } else {
       System.out.println(diagram);
     }

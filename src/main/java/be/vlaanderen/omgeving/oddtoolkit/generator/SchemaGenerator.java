@@ -17,7 +17,7 @@ import org.apache.jena.atlas.lib.Pair;
 
 @Getter
 public abstract class SchemaGenerator extends DiagramGenerator {
-
+  private final List<Enum> schemaEnums = new ArrayList<>();
   private final List<Table> tables = new ArrayList<>();
   private final OntologyConfiguration ontologyConfiguration;
   private final SchemaGeneratorProperties schemaGeneratorProperties;
@@ -40,7 +40,10 @@ public abstract class SchemaGenerator extends DiagramGenerator {
   }
 
   private void updateEnums() {
-    this.enums
+    this.schemaEnums.addAll(getEnums().stream()
+        .filter(e -> e.getName() != null)
+        .toList());
+    this.schemaEnums
         .forEach(e -> e.setName(toSnakeCase(e.getName()).toLowerCase()));
   }
 
@@ -174,38 +177,69 @@ public abstract class SchemaGenerator extends DiagramGenerator {
     joinTable.setName(getJoinTableName(relation));
     // Add all primary key columns from both tables to the join table
     List<Column> joinColumns = new ArrayList<>();
-    List<Column> leftColumns = relation.getFrom().getColumns().stream()
-        .filter(Column::isPrimaryKey)
-        .map(Column::copy)
-        .peek(c -> c.setName(relation.getFrom().getName() + "_" + c.getName()))
-        .toList();
-    List<Column> rightColumns = relation.getTo().getColumns().stream()
-        .filter(Column::isPrimaryKey)
-        .map(Column::copy)
-        .peek(c -> c.setName(relation.getTo().getName() + "_" + c.getName()))
-        // If the left column has the same name as the right column, rename the right column to avoid conflicts
-        .peek(c -> {
-          if (leftColumns.stream().anyMatch(lc -> lc.getName().equals(c.getName()))) {
-            c.setName(relation.getTo().getName() + "_" + c.getName());
-          }
-        })
-        .toList();
-    joinColumns.addAll(leftColumns);
-    joinColumns.addAll(rightColumns);
-    if (leftColumns.isEmpty() || rightColumns.isEmpty()) {
-      throw new IllegalStateException(
-          "Cannot create join table for relation " + relation.getName()
-              + " because one of the tables does not have a primary key");
+    // Get identity columns if enabled
+    if (schemaGeneratorProperties.getIdentityTables().isEnabled()) {
+      Column fromIdentityColumn = relation.getFrom().getColumns().stream()
+          .filter(c -> c.isPrimaryKey() && c.isForeignKey())
+          .findFirst()
+          .orElse(null);
+      Column toIdentityColumn = relation.getTo().getColumns().stream()
+          .filter(c -> c.isPrimaryKey() && c.isForeignKey())
+          .findFirst()
+          .orElse(null);
+      if (fromIdentityColumn != null) {
+        joinColumns.add(fromIdentityColumn.copy());
+      }
+      if (toIdentityColumn != null) {
+        joinColumns.add(toIdentityColumn.copy());
+      }
+      // Set all columns as FK in the join table
+      joinColumns.forEach(c -> c.setForeignKey(true));
+
+      // Include one pair of temporal columns if both tables have them
+      List<Column> temporalColumns = relation.getFrom().getColumns().stream()
+          .filter(c -> ontologyConfiguration.getTemporalProperties().contains(c.getUri()))
+          .map(Column::copy)
+          .toList();
+      if (!temporalColumns.isEmpty()) {
+        joinColumns.addAll(temporalColumns);
+      }
+      joinTable.setColumns(joinColumns);
+    } else {
+      List<Column> leftColumns = relation.getFrom().getColumns().stream()
+          .filter(Column::isPrimaryKey)
+          .map(Column::copy)
+          .peek(c -> c.setName(relation.getFrom().getName() + "_" + c.getName()))
+          .toList();
+      List<Column> rightColumns = relation.getTo().getColumns().stream()
+          .filter(Column::isPrimaryKey)
+          .map(Column::copy)
+          .peek(c -> c.setName(relation.getTo().getName() + "_" + c.getName()))
+          // If the left column has the same name as the right column, rename the right column to avoid conflicts
+          .peek(c -> {
+            if (leftColumns.stream().anyMatch(lc -> lc.getName().equals(c.getName()))) {
+              c.setName(relation.getTo().getName() + "_" + c.getName());
+            }
+          })
+          .toList();
+      if (leftColumns.isEmpty() || rightColumns.isEmpty()) {
+        throw new IllegalStateException(
+            "Cannot create join table for relation " + relation.getName()
+                + " because one of the tables does not have a primary key");
+      }
+      joinColumns.addAll(leftColumns);
+      joinColumns.addAll(rightColumns);
+
+      // Set all columns as FK in the join table
+      joinColumns.forEach(c -> c.setForeignKey(true));
+      // Create relations from original tables to join table
+      createJoinTableRelation(relation.getName(), relation.getFrom(), joinTable,
+          leftColumns);
+      createJoinTableRelation(relation.getName(), relation.getTo(), joinTable,
+          rightColumns);
     }
-    // Set all columns as FK in the join table
-    joinColumns.forEach(c -> c.setForeignKey(true));
     joinTable.setColumns(joinColumns);
     addTable(joinTable);
-    // Create relations from original tables to join table
-    createJoinTableRelation(relation.getName(), relation.getFrom(), joinTable,
-        leftColumns);
-    createJoinTableRelation(relation.getName(), relation.getTo(), joinTable,
-        rightColumns);
     return joinTable;
   }
 
@@ -257,7 +291,7 @@ public abstract class SchemaGenerator extends DiagramGenerator {
                 enumValue.setName(toSnakeCase(relationName).toUpperCase());
                 return enumValue;
               }).toList());
-              enums.add(enumType);
+              schemaEnums.add(enumType);
               Table joinTable = createJoinTable(relationsToTarget.getFirst());
               // Add merge type column
               Column mergeTypeColumn = new Column();
@@ -527,7 +561,7 @@ public abstract class SchemaGenerator extends DiagramGenerator {
 
     public Column(Attribute attribute) {
       setPropertyInfo(attribute.getPropertyInfo());
-      setDataType(attribute.getDataType());
+      setDataType(new DataType(attribute.getDataType().getName(), attribute.getDataType().getUri()));
       setDomain(attribute.getDomain());
       setName(toSnakeCase(attribute.getName()));
       setRange(attribute.getRange());

@@ -5,6 +5,7 @@ import be.vlaanderen.omgeving.oddtoolkit.config.DiagramGeneratorProperties;
 import be.vlaanderen.omgeving.oddtoolkit.model.ClassInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.ConceptSchemeInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.OntologyInfo;
+import be.vlaanderen.omgeving.oddtoolkit.util.MermaidExporter;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -14,6 +15,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Shared base for diagram generators (class diagram, ER diagram, ...). Centralizes generation flow,
@@ -22,6 +25,7 @@ import java.util.Map;
  */
 public abstract class DiagramGenerator extends ClassGenerator {
 
+  private static final Logger logger = LoggerFactory.getLogger(DiagramGenerator.class);
   protected final DiagramGeneratorProperties diagramGeneratorProperties;
   protected final Map<String, String> stylesMap = new HashMap<>();
 
@@ -36,6 +40,35 @@ public abstract class DiagramGenerator extends ClassGenerator {
   public void run() {
     super.run();
     prepareStyleDefinitions();
+  }
+
+  protected void saveDiagram(String diagramContent) {
+    String outputFile = getOutputFile();
+    if (outputFile != null) {
+      saveToFile(outputFile, diagramContent);
+      // Save as high-resolution PNG with the same base filename
+      saveDiagramAsPng(outputFile, diagramContent);
+    } else {
+      System.out.println(diagramContent);
+    }
+  }
+
+  /**
+   * Exports the Mermaid diagram content to a high-resolution PNG file.
+   * The PNG file is saved with the same name as the Mermaid file but with .png extension.
+   *
+   * @param mermaidFilePath the path to the Mermaid diagram file
+   * @param diagramContent the Mermaid diagram content
+   */
+  private void saveDiagramAsPng(String mermaidFilePath, String diagramContent) {
+    try {
+      String pngFilePath = mermaidFilePath.replaceAll("\\.[^.]+$", ".png");
+      logger.info("Exporting diagram to PNG: {}", pngFilePath);
+      MermaidExporter.exportToPng(diagramContent, pngFilePath);
+      logger.info("Successfully exported diagram to PNG: {}", pngFilePath);
+    } catch (IOException e) {
+      logger.error("Failed to export diagram to PNG", e);
+    }
   }
 
   protected void emitStyleDefinitions(StringBuilder builder) {

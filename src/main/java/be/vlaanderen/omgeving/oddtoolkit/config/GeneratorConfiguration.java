@@ -4,8 +4,10 @@ import be.vlaanderen.omgeving.oddtoolkit.adapter.AbstractAdapter;
 import be.vlaanderen.omgeving.oddtoolkit.generator.ClassDiagramGenerator;
 import be.vlaanderen.omgeving.oddtoolkit.generator.ClassGenerator;
 import be.vlaanderen.omgeving.oddtoolkit.generator.ERDiagramGenerator;
+import be.vlaanderen.omgeving.oddtoolkit.generator.JavaGenerator;
 import be.vlaanderen.omgeving.oddtoolkit.generator.SQLGenerator;
 import be.vlaanderen.omgeving.oddtoolkit.generator.ShaclGenerator;
+import be.vlaanderen.omgeving.oddtoolkit.generator.TypescriptGenerator;
 import be.vlaanderen.omgeving.oddtoolkit.model.ConceptSchemeInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.OntologyInfo;
 import java.util.ArrayList;
@@ -89,6 +91,32 @@ public class GeneratorConfiguration {
     Map<String, AbstractAdapter<?>> adapterBeans = (Map) context.getBeansOfType(AbstractAdapter.class);
     List<AbstractAdapter<?>> adapters = selectAdapters(adapterBeans, generatorProperties.adaptersFor("shacl"));
     return new ShaclGenerator(ontologyInfo, conceptSchemeInfo, adapters, shaclGeneratorProperties);
+  }
+
+  @Bean
+  @SuppressWarnings("unchecked")
+  public JavaGenerator javaGenerator(OntologyInfo ontologyInfo,
+      ConceptSchemeInfo conceptSchemeInfo,
+      ApplicationContext context,
+      GeneratorProperties generatorProperties,
+      DiagramGeneratorProperties diagramGeneratorProperties,
+      SchemaGeneratorProperties schemaGeneratorProperties,
+      JavaGeneratorProperties javaGeneratorProperties) {
+    Map<String, AbstractAdapter<?>> adapterBeans = (Map) context.getBeansOfType(AbstractAdapter.class);
+    List<AbstractAdapter<?>> adapters = selectAdapters(adapterBeans, generatorProperties.adaptersFor("shacl"));
+    return new JavaGenerator(ontologyInfo, conceptSchemeInfo, adapters, diagramGeneratorProperties, schemaGeneratorProperties, javaGeneratorProperties);
+  }
+
+  @Bean
+  @SuppressWarnings("unchecked")
+  public TypescriptGenerator typescriptGenerator(OntologyInfo ontologyInfo,
+      ConceptSchemeInfo conceptSchemeInfo,
+      ApplicationContext context,
+      GeneratorProperties generatorProperties,
+      TypescriptGeneratorProperties typescriptGeneratorProperties) {
+    Map<String, AbstractAdapter<?>> adapterBeans = (Map) context.getBeansOfType(AbstractAdapter.class);
+    List<AbstractAdapter<?>> adapters = selectAdapters(adapterBeans, generatorProperties.adaptersFor("shacl"));
+    return new TypescriptGenerator(ontologyInfo, conceptSchemeInfo, adapters, typescriptGeneratorProperties);
   }
 
   private List<AbstractAdapter<?>> selectAdapters(Map<String, AbstractAdapter<?>> adapterBeans, List<String> requestedAdapterNames) {

@@ -4,6 +4,10 @@ ontology:
   enum-classes:
     - "http://www.w3.org/ns/sosa/Procedure"
     - "http://www.w3.org/ns/adms#Status"
+  temporal-properties:
+    - "http://purl.org/dc/terms/created"
+    - "http://purl.org/dc/terms/issued"
+    - "http://purl.org/dc/terms/valid"
   extra-properties:
     # We want to use UUIDs as identifiers (including any identifiers from the IRI Template's)
     - name: "uuid"
@@ -45,6 +49,9 @@ ontology:
       cardinality:
         max: 1
       datatype: "http://www.w3.org/2001/XMLSchema#decimal"
+    # By setting the datatype to rdfs:Datatype, we create a new attribute for the datatype
+    - uri: "http://www.w3.org/2004/02/skos/core#notation"
+      datatype: "http://www.w3.org/2000/01/rdf-schema#Datatype"
 
 generators:
   class-diagram:
@@ -55,6 +62,9 @@ generators:
     output-file: "target/test-cache/sql/schema.sql"
   shacl-generator:
     output-file: "target/test-cache/shacl/schema.ttl"
+  java-generator:
+    package-name: be.vlaanderen.omgeving.riepr.model.structuur
+    output-directory: "target/generated-sources/java"
 
   schema-generator:
     # Create stable identity tables for classes that have more than one primary key

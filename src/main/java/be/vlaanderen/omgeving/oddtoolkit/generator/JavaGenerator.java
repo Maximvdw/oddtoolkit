@@ -1,39 +1,273 @@
 package be.vlaanderen.omgeving.oddtoolkit.generator;
 
-import static org.apache.commons.lang3.StringUtils.capitalize;
-
 import be.vlaanderen.omgeving.oddtoolkit.adapter.AbstractAdapter;
+import be.vlaanderen.omgeving.oddtoolkit.config.DiagramGeneratorProperties;
+import be.vlaanderen.omgeving.oddtoolkit.config.JavaGeneratorProperties;
+import be.vlaanderen.omgeving.oddtoolkit.config.SchemaGeneratorProperties;
 import be.vlaanderen.omgeving.oddtoolkit.model.ConceptSchemeInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.OntologyInfo;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import org.apache.jena.atlas.lib.Pair;
+import org.jspecify.annotations.Nullable;
 
-public class JavaGenerator extends ClassGenerator {
+public class JavaGenerator extends SchemaGenerator {
+
   private final Map<Clazz, String> fileNames = new HashMap<>();
+  private final Map<String, String> nameMapping = new HashMap<>();
+
+  private final JavaGeneratorProperties generatorProperties;
 
   public JavaGenerator(OntologyInfo ontologyInfo,
       ConceptSchemeInfo conceptSchemeInfo,
-      List<AbstractAdapter<?>> adapters) {
-    super(ontologyInfo, conceptSchemeInfo, adapters);
+      List<AbstractAdapter<?>> adapters,
+      DiagramGeneratorProperties diagramGeneratorProperties,
+      SchemaGeneratorProperties schemaGeneratorProperties,
+      JavaGeneratorProperties generatorProperties) {
+    super(ontologyInfo, conceptSchemeInfo, adapters, diagramGeneratorProperties,
+        schemaGeneratorProperties);
+    this.generatorProperties = generatorProperties;
   }
 
   @Override
   public void run() {
     super.run();
+    prepareFileNames();
+    generateFile(getClasses(), null);
+    generateFile(getInterfaces(), "interface");
+    generateFile(getEnums(), "enum");
   }
 
-  protected void generateInterfaces() {
-    this.interfaces.forEach(inf -> {
-      String fileName = inf.getName() + ".interface.java";
-      fileNames.put(inf, fileName);
-      StringBuilder builder = new StringBuilder();
-      builder.append("@Getter\n").append("@Setter\n");
-      builder.append("public interface ").append(inf.getName()).append(" {\n");
-      inf.getAttributes().forEach(prop -> {
+  private String getPackageName() {
+    return generatorProperties.getPackageName();
+  }
 
+  private String getBasePath() {
+    return generatorProperties.getOutputDirectory();
+  }
+
+  protected void prepareFileNames() {
+    // Prepare file names for all classes, interfaces and enums
+    getClasses().forEach(clazz -> fileNames.put(clazz, clazz.getName() + ".java"));
+    getInterfaces().forEach(clazz -> fileNames.put(clazz, "I" + clazz.getName() + ".java"));
+    getEnums().forEach(clazz -> fileNames.put(clazz, clazz.getName() + ".java"));
+    // Prepare name mapping for all classes, interfaces and enums
+    getClasses().forEach(clazz -> nameMapping.put(clazz.getName(), clazz.getName()));
+    getInterfaces().forEach(clazz -> nameMapping.put(clazz.getName(), "I" + clazz.getName()));
+    getEnums().forEach(clazz -> nameMapping.put(clazz.getName(), clazz.getName()));
+  }
+
+  protected void generateFile(List<? extends Clazz> classes, @Nullable String type) {
+    classes.forEach(clazz -> {
+      Table equivalentTable = getTableByClazz(clazz);
+
+      String typeDeclaration = "class";
+      switch (type) {
+        case "interface" -> {
+          clazz.setName("I" + clazz.getName());
+          typeDeclaration = "interface";
+        }
+        case "enum" -> {
+          typeDeclaration = "enum";
+        }
+        case null -> {
+        }
+        default -> throw new IllegalStateException("Unexpected value: " + type);
+      }
+
+      String fileName = clazz.getName() + ".java";
+      StringBuilder builder = new StringBuilder();
+      // Package declaration
+      builder.append("package ").append(getPackageName()).append(";\n\n");
+      boolean isInterface = clazz instanceof Interface;
+      boolean isEnum = clazz instanceof Enum;
+
+      // Begin with imports
+      getDependencies(clazz)
+          // Skip dependencies in the same package
+          .stream()
+          .filter(dep -> !dep.getLeft().equals(getPackageName()))
+          .forEach(
+              dep -> builder.append("import ").append(dep.getLeft()).append('.')
+                  .append(dep.getRight())
+                  .append(";\n"));
+      // Add default imports
+      if (!isInterface) {
+        // If no properties, we can skip JSON annotations and Lombok imports
+        boolean hasProperties = !clazz.getAttributes().isEmpty();
+        if (hasProperties) {
+          builder.append("import com.fasterxml.jackson.annotation.JsonProperty;\n");
+        }
+        builder.append("import lombok.Getter;\n");
+        builder.append("import lombok.Setter;\n");
+        builder.append("import lombok.Builder;\n");
+        builder.append("import lombok.NoArgsConstructor;\n");
+        builder.append("import lombok.AllArgsConstructor;\n");
+        builder.append("import jakarta.persistence.Table;\n");
+        builder.append("import jakarta.persistence.Entity;\n");
+        builder.append("import jakarta.persistence.Column;\n");
+      }
+      builder.append("\n");
+
+      // Add comments
+      builder.append("/**\n");
+      builder.append(" * ").append(clazz.getName()).append("\n");
+      builder.append(" * <a href=\"").append(clazz.getUri()).append("\">")
+          .append(clazz.getClassInfo().getName()).append("</a>\n");
+      builder.append(" **/\n");
+
+      if (!isInterface && !isEnum) {
+        builder.append("@Getter\n").append("@Setter\n");
+        builder.append("@Entity(name = \"").append(clazz.getName()).append("\")\n");
+        builder.append("@Builder(toBuilder = true)\n");
+        builder.append("@NoArgsConstructor\n").append("@AllArgsConstructor\n");
+        builder.append("@Table(name = \"").append(equivalentTable.getName()).append("\")\n");
+      }
+
+      // Determine if it extends or implements other classes/interfaces
+      String extendsClause = "";
+      if (clazz.getExtendsClass() != null) {
+        extendsClause = " extends " + nameMapping.get(clazz.getExtendsClass().getName());
+      }
+      String implementsClause = "";
+      if (!clazz.getInterfaces().isEmpty()) {
+        implementsClause = " implements " + clazz.getInterfaces().stream()
+            .map(i -> nameMapping.get(i.getName()))
+            .filter(Objects::nonNull)
+            .reduce((a, b) -> a + ", " + b)
+            .orElse("");
+      }
+
+      builder.append("public ").append(typeDeclaration).append(" ").append(clazz.getName())
+          .append(extendsClause).append(implementsClause)
+          .append(" {\n");
+      if (clazz instanceof Enum enumClazz) {
+        // For enums, we can add the enum values as constants
+        enumClazz.getValues().forEach(value -> {
+          // Add comment
+          builder.append("\t// ").append(value.getUri()).append("\n");
+          builder.append("\t").append(value.getName()).append(",\n");
+        });
+      }
+      clazz.getAttributes().forEach(prop -> {
+        // Add comments for the property
+        builder.append("\t// ").append("<a href=\"").append(prop.getUri()).append("\">")
+            .append(prop.getPropertyInfo().getName()).append("</a>\n");
+        // Add JSON annotations
+        boolean isArray = prop.getCardinality().isToMany();
+        String dataType = isArray ? "List<" + getJavaType(prop.getDataType()).getRight() + ">" : getJavaType(
+            prop.getDataType()).getRight();
+        if (isInterface) {
+          boolean isBoolean = getJavaType(prop.getDataType()).getRight().equals("Boolean");
+          String getterName =
+              (isBoolean ? "is" : "get") + prop.getName().substring(0, 1).toUpperCase()
+                  + prop.getName().substring(1);
+          String setterName =
+              "set" + prop.getName().substring(0, 1).toUpperCase() + prop.getName().substring(1);
+          builder.append("\t")
+              .append(dataType)
+              .append(" ").append(getterName).append("();\n");
+          builder.append("\t")
+              .append("void ").append(setterName).append("(")
+              .append(dataType)
+              .append(" ").append(prop.getName()).append(");\n");
+          builder.append("\n");
+        } else {
+          Column equivalentColumn = equivalentTable.getColumnByAttribute(prop);
+          if (equivalentColumn == null) {
+            // Relation
+            switch (prop.getCardinality()) {
+              case ONE_TO_ONE -> builder.append("\t@OneToOne\n");
+              case ONE_TO_MANY -> builder.append("\t@OneToMany\n");
+              case MANY_TO_ONE -> builder.append("\t@ManyToOne\n");
+              case MANY_TO_MANY -> builder.append("\t@ManyToMany\n");
+            }
+          } else if (prop.getRange() == null) {
+            // Atomic attribute
+            builder.append("\t@Column(name = \"").append(equivalentColumn.getName())
+                .append("\", nullable = ").append(equivalentColumn.isNullable()).append(")\n");
+          } else if (!prop.getCardinality().equals(Cardinality.MANY_TO_MANY)) {
+            Table rangeTable = getTableByClazz(prop.getRange());
+            if (rangeTable != null) {
+              // Join column
+              Relation relation = equivalentTable.getRelationByAttribute(prop);
+              builder.append("\t@JoinColumn(name = \"").append(relation.getToColumn().getName())
+                  .append("\", nullable = ").append(equivalentColumn.isNullable()).append(")\n");
+            }
+          }
+
+          builder.append("\t@JsonProperty(\"").append(prop.getPropertyInfo().getName())
+              .append("\")\n");
+
+          builder.append("\t").append("private ")
+              .append(dataType)
+              .append(" ").append(prop.getName()).append(";\n");
+        }
       });
       builder.append("}\n");
+      // Save to file
+      saveToFile(fileName, builder.toString());
     });
+  }
+
+  protected List<Pair<String, String>> getDependencies(Clazz clazz) {
+    // For Java, we can determine dependencies based on the data types of the attributes
+    Set<Pair<String, String>> dependencies = new HashSet<>(clazz.getAttributes().stream()
+        .map(attr -> getJavaType(attr.getDataType()))
+        .filter(pair -> !pair.getLeft().startsWith("java.lang"))
+        .toList());
+    // Add extend and implement dependencies
+    if (clazz.getExtendsClass() != null) {
+      dependencies.add(
+          new Pair<>(getPackageName(), nameMapping.get(clazz.getExtendsClass().getName())));
+    }
+    clazz.getInterfaces()
+        .forEach(i -> dependencies.add(new Pair<>(getPackageName(), nameMapping.get(i.getName()))));
+    return dependencies.stream().toList();
+  }
+
+  protected void saveToFile(String fileName, String content) {
+    try {
+      Path outputPath = Paths.get(getBasePath(), fileName);
+      Files.createDirectories(outputPath.getParent());
+      Files.writeString(outputPath, content);
+    } catch (IOException e) {
+      throw new RuntimeException("Failed to save file: " + fileName, e);
+    }
+  }
+
+  protected Pair<String, String> getJavaType(DataType dataType) {
+    // First check if it's a known primitive type
+    return switch (dataType.getUri()) {
+      case "http://www.w3.org/2001/XMLSchema#string" -> getJavaPackageAndClassName(String.class);
+      case "http://www.w3.org/2001/XMLSchema#integer" -> getJavaPackageAndClassName(Integer.class);
+      case "http://www.w3.org/2001/XMLSchema#decimal", "http://www.w3.org/2001/XMLSchema#double",
+          "http://www.w3.org/2001/XMLSchema#float" -> getJavaPackageAndClassName(Double.class);
+      case "http://www.w3.org/2001/XMLSchema#boolean" -> getJavaPackageAndClassName(Boolean.class);
+      case "http://www.w3.org/2001/XMLSchema#date" -> getJavaPackageAndClassName(LocalDate.class);
+      case "http://www.w3.org/2001/XMLSchema#dateTime" ->
+          getJavaPackageAndClassName(LocalDateTime.class);
+      default -> {
+        String name = nameMapping.get(dataType.getName());
+        String packageName = getPackageName();
+        yield new Pair<>(packageName, name);
+      }
+    };
+  }
+
+  protected Pair<String, String> getJavaPackageAndClassName(Class<?> clazz) {
+    String packageName = clazz.getPackageName();
+    String className = clazz.getSimpleName();
+    return new Pair<>(packageName, className);
   }
 }

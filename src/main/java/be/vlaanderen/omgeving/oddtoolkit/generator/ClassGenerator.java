@@ -15,6 +15,7 @@ import lombok.Getter;
 import lombok.Setter;
 import org.apache.jena.atlas.lib.Pair;
 import org.apache.jena.rdf.model.Resource;
+import org.apache.jena.vocabulary.RDFS;
 import org.apache.jena.vocabulary.XSD;
 import org.jspecify.annotations.Nullable;
 
@@ -78,9 +79,9 @@ public class ClassGenerator extends BaseGenerator {
     T clazz = classType.getConstructor().newInstance();
     clazz.setClassInfo(c);
     clazz.setName(nameAndLabel.getLeft());
-    clazz.setAttributes(c.getProperties()
-        .stream()
-        .map(p -> {
+    List<Attribute> attributes = new ArrayList<>();
+    c.getProperties()
+        .forEach(p -> {
           Pair<String, String> propertyNameAndLabel = getPropertyNameAndLabel(p);
           Attribute attribute = new Attribute();
           attribute.setPropertyInfo(p);
@@ -89,7 +90,18 @@ public class ClassGenerator extends BaseGenerator {
           attribute.setDomain(clazz);
           attribute.setPrimaryKey(p.isIdentifier());
           // Check if the property is a relation to another class
-          if (p.getRange() != null && p.getRange().stream()
+          if (!p.getRange().isEmpty() && p.getRange().getFirst().equals(RDFS.Datatype.getURI())) {
+            // Set datatype to string
+            attribute.setDataType(new DataType("String", XSD.xstring.getURI()));
+            // Create an additional attribute
+            Attribute datatypeAttribute = new Attribute();
+            datatypeAttribute.setPropertyInfo(p);
+            datatypeAttribute.setName("datatype");
+            datatypeAttribute.setDomain(clazz);
+            datatypeAttribute.setCardinality(Cardinality.ONE_TO_ONE);
+            datatypeAttribute.setDataType(new DataType("String", XSD.xstring.getURI()));
+            attributes.add(datatypeAttribute);
+          } else if (p.getRange() != null && p.getRange().stream()
               .noneMatch(uri -> getOntologyClasses().stream()
                   .anyMatch(otherClass -> otherClass.getUri().equals(uri)))) {
             // Determine a data type based on XSD type or default to VARCHAR
@@ -97,9 +109,9 @@ public class ClassGenerator extends BaseGenerator {
                 p.getRange().getFirst() : XSD.xstring.getURI();
             attribute.setDataType(new DataType(null, dataType));
           }
-          return attribute;
-        })
-        .toList());
+          attributes.add(attribute);
+        });
+    clazz.setAttributes(attributes);
     return clazz;
   }
 
