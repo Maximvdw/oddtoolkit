@@ -2,6 +2,8 @@ package be.vlaanderen.omgeving.oddtoolkit.generator;
 
 import be.vlaanderen.omgeving.oddtoolkit.adapter.AbstractAdapter;
 import be.vlaanderen.omgeving.oddtoolkit.model.AbstractInfo;
+import be.vlaanderen.omgeving.oddtoolkit.model.Cardinality;
+import be.vlaanderen.omgeving.oddtoolkit.model.ClassConceptInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.ClassInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.ConceptSchemeInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.OntologyInfo;
@@ -10,6 +12,7 @@ import be.vlaanderen.omgeving.oddtoolkit.model.Scope;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import lombok.Getter;
 import lombok.Setter;
@@ -28,8 +31,44 @@ public class ClassGenerator extends BaseGenerator {
 
   public ClassGenerator(OntologyInfo ontologyInfo,
       ConceptSchemeInfo conceptSchemeInfo, List<AbstractAdapter<?>> adapters) {
-    super(ontologyInfo, conceptSchemeInfo, adapters);
+    super(ontologyInfo, conceptSchemeInfo, adapters, Map.of());
+  }
 
+  protected Pair<String, String> getClassNameAndLabel(ClassInfo classInfo) {
+    String name = classInfo.getName();
+    String label = classInfo.getLabel() != null ? classInfo.getLabel() : name;
+    // Check concept class info
+    ClassConceptInfo cci = getClassConceptForClass(classInfo.getUri());
+    if (cci != null) {
+      if (cci.getName() != null) {
+        name = cci.getName();
+      }
+      if (cci.getLabel() != null) {
+        label = cci.getLabel();
+      }
+    }
+    return new Pair<>(name, label);
+  }
+
+  protected Pair<String, String> getPropertyNameAndLabel(PropertyInfo propertyInfo) {
+    String name = propertyInfo.getName();
+    String label = propertyInfo.getLabel() != null ? propertyInfo.getLabel() : name;
+    return new Pair<>(name, label);
+  }
+
+  public List<Clazz> getClasses() {
+    List<Clazz> allClasses = new ArrayList<>();
+    allClasses.addAll(classes);
+    allClasses.addAll(interfaces);
+    return allClasses;
+  }
+
+  protected OntologyInfo getOntologyInfo() {
+    return ontologyInfo;
+  }
+
+  protected be.vlaanderen.omgeving.oddtoolkit.config.OntologyConfiguration getOntologyConfiguration() {
+    return ontologyInfo.getConfig();
   }
 
   @Override
@@ -38,6 +77,7 @@ public class ClassGenerator extends BaseGenerator {
     extractClasses();
     extractInterfaces();
     extractEnums();
+    extractMetadataClasses();
     extractRelations();
     // Apply the filters in order
     applyFilters();
@@ -221,6 +261,117 @@ public class ClassGenerator extends BaseGenerator {
           }
         })
         .toList());
+  }
+
+  protected void extractMetadataClasses() {
+    var metadataConfig = getOntologyConfiguration().getMetadataClasses();
+    if (metadataConfig == null || metadataConfig.getClasses().isEmpty()) {
+      return;
+    }
+
+    String suffix = metadataConfig.getSuffix();
+    String keyProperty = metadataConfig.getKey();
+    String valueProperty = metadataConfig.getValue();
+    List<String> temporalProperties = getOntologyConfiguration().getTemporalProperties();
+
+    for (String classUri : metadataConfig.getClasses()) {
+      // Find the corresponding class
+      Clazz sourceClass = classes.stream()
+          .filter(c -> c.getUri().equals(classUri))
+          .findFirst()
+          .orElse(null);
+
+      if (sourceClass != null) {
+        createMetadataClass(sourceClass, suffix, keyProperty, valueProperty, temporalProperties);
+      }
+    }
+  }
+
+  private void createMetadataClass(Clazz sourceClass, String suffix, String keyProperty,
+                                    String valueProperty, List<String> temporalProperties) {
+    Clazz metadataClass = new Clazz();
+    metadataClass.setName(sourceClass.getName() + suffix);
+    metadataClass.setClassInfo(sourceClass.getClassInfo());
+
+    List<Attribute> metadataAttributes = new ArrayList<>();
+
+    // Add key attribute
+    Attribute keyAttr = new Attribute();
+    keyAttr.setName("key");
+    PropertyInfo keyPropInfo = new PropertyInfo(sourceClass.getClassInfo().getScope(),
+        getOntologyInfo().getModel().createResource(keyProperty));
+    keyPropInfo.setName("key");
+    keyPropInfo.setCardinalityTo(new PropertyInfo.Cardinality());
+    keyPropInfo.getCardinalityTo().setMin(1);
+    keyPropInfo.getCardinalityTo().setMax(1);
+    keyPropInfo.setCardinalityFrom(new PropertyInfo.Cardinality());
+    keyAttr.setPropertyInfo(keyPropInfo);
+    keyAttr.setCardinality(Cardinality.ONE_TO_ONE);
+    keyAttr.setDomain(metadataClass);
+    keyAttr.setDataType(new DataType("String", XSD.xstring.getURI()));
+    metadataAttributes.add(keyAttr);
+
+    // Add value attribute
+    Attribute valueAttr = new Attribute();
+    valueAttr.setName("value");
+    PropertyInfo valuePropInfo = new PropertyInfo(sourceClass.getClassInfo().getScope(),
+        getOntologyInfo().getModel().createResource(valueProperty));
+    valuePropInfo.setName("value");
+    valuePropInfo.setCardinalityTo(new PropertyInfo.Cardinality());
+    valuePropInfo.getCardinalityTo().setMin(1);
+    valuePropInfo.getCardinalityTo().setMax(1);
+    valuePropInfo.setCardinalityFrom(new PropertyInfo.Cardinality());
+    valueAttr.setPropertyInfo(valuePropInfo);
+    valueAttr.setCardinality(Cardinality.ONE_TO_ONE);
+    valueAttr.setDomain(metadataClass);
+    valueAttr.setDataType(new DataType("String", XSD.xstring.getURI()));
+    metadataAttributes.add(valueAttr);
+
+    // Add temporal properties
+    if (temporalProperties != null && !temporalProperties.isEmpty()) {
+      for (String temporalPropUri : temporalProperties) {
+        // Find if source class has this temporal property
+        sourceClass.getAttributes().stream()
+            .filter(attr -> attr.getUri() != null && attr.getUri().equals(temporalPropUri))
+            .findFirst()
+            .ifPresent(sourceAttr -> {
+              Attribute temporalAttr = new Attribute();
+              temporalAttr.setName(sourceAttr.getName());
+              temporalAttr.setPropertyInfo(sourceAttr.getPropertyInfo());
+              temporalAttr.setCardinality(sourceAttr.getCardinality());
+              temporalAttr.setDomain(metadataClass);
+              temporalAttr.setDataType(sourceAttr.getDataType());
+              temporalAttr.setRange(sourceAttr.getRange());
+              metadataAttributes.add(temporalAttr);
+            });
+      }
+    }
+
+    // Link metadata -> source class (many metadata entries can point to one source entity).
+    Attribute sourceReferenceAttr = new Attribute();
+    String sourceReferenceName = sourceClass.getName().substring(0, 1).toLowerCase()
+        + sourceClass.getName().substring(1);
+    sourceReferenceAttr.setName(sourceReferenceName);
+
+    String relationUri = sourceClass.getUri() + "/metadata-reference";
+    PropertyInfo relationInfo = new PropertyInfo(sourceClass.getClassInfo().getScope(),
+        getOntologyInfo().getModel().createResource(relationUri));
+    relationInfo.setName(sourceReferenceName);
+    relationInfo.setCardinalityTo(new PropertyInfo.Cardinality());
+    relationInfo.getCardinalityTo().setMin(1);
+    relationInfo.getCardinalityTo().setMax(1);
+    relationInfo.setCardinalityFrom(new PropertyInfo.Cardinality());
+    relationInfo.getRange().add(sourceClass.getUri());
+
+    sourceReferenceAttr.setPropertyInfo(relationInfo);
+    sourceReferenceAttr.setCardinality(Cardinality.MANY_TO_ONE);
+    sourceReferenceAttr.setDomain(metadataClass);
+    sourceReferenceAttr.setRange(sourceClass);
+    sourceReferenceAttr.setDataType(new DataType(sourceClass.getName(), sourceClass.getUri()));
+    metadataAttributes.add(sourceReferenceAttr);
+
+    metadataClass.setAttributes(metadataAttributes);
+    this.classes.add(metadataClass);
   }
 
   protected void filterInverseProperties(Clazz clazz) {
@@ -584,30 +735,25 @@ public class ClassGenerator extends BaseGenerator {
   }
 
   protected Cardinality getCardinality(PropertyInfo property) {
-    Cardinality cardinality;
-    switch (property.getCardinalityFrom().getMax() == null
-        || property.getCardinalityFrom().getMax() > 1) {
-      case false -> {
-        switch (property.getCardinalityTo().getMax() == null
-            || property.getCardinalityTo().getMax() > 1) {
-          case false -> cardinality = Cardinality.ONE_TO_ONE;
-          case true -> cardinality = Cardinality.ONE_TO_MANY;
-        }
-      }
-      case true -> {
-        switch (property.getCardinalityTo().getMax() == null
-            || property.getCardinalityTo().getMax() > 1) {
-          case false -> cardinality = Cardinality.MANY_TO_ONE;
-          case true -> cardinality = Cardinality.MANY_TO_MANY;
-        }
-      }
+    boolean fromIsMany = property.getCardinalityFrom().getMax() == null
+        || property.getCardinalityFrom().getMax() > 1;
+    boolean toIsMany = property.getCardinalityTo().getMax() == null
+        || property.getCardinalityTo().getMax() > 1;
+
+    if (!fromIsMany && !toIsMany) {
+      return Cardinality.ONE_TO_ONE;
+    } else if (!fromIsMany) {
+      return Cardinality.ONE_TO_MANY;
+    } else if (!toIsMany) {
+      return Cardinality.MANY_TO_ONE;
+    } else {
+      return Cardinality.MANY_TO_MANY;
     }
-    return cardinality;
   }
 
   @Getter
   @Setter
-  protected static class Clazz {
+  public static class Clazz {
 
     private List<Interface> interfaces = new ArrayList<>();
     private @Nullable Clazz extendsClass;

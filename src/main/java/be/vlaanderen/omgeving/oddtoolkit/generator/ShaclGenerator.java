@@ -37,14 +37,24 @@ public class ShaclGenerator extends BaseGenerator {
       ConceptSchemeInfo conceptSchemeInfo,
       List<AbstractAdapter<?>> adapters,
       ShaclGeneratorProperties shaclGeneratorProperties) {
-    super(ontologyInfo, conceptSchemeInfo, adapters);
+    super(ontologyInfo, conceptSchemeInfo, adapters, java.util.Map.of());
     this.shaclGeneratorProperties = shaclGeneratorProperties;
+  }
+
+  @Override
+  public String getName() {
+    return "shacl";
+  }
+
+  @Override
+  public String getDescription() {
+    return "Generates SHACL shapes from the ontology";
   }
 
   @Override
   public void run() {
     super.run();
-    Model shacl = generate();
+    Model shacl = generateShacl();
     // Save to file
     if (getOutputFile() != null) {
       logger.info("Writing SHACL shapes to {}", getOutputFile());
@@ -73,9 +83,10 @@ public class ShaclGenerator extends BaseGenerator {
    * Generate SHACL shapes from the ontology's inferred model.
    * Uses inferredModel if present, otherwise falls back to the raw model.
    */
-  public Model generate() {
-    OntologyInfo info = getOntologyInfo();
-    Model ontology = info.getModel();
+  private Model generateShacl() {
+    Model ontology = ontologyInfo.getInferredModel() != null
+        ? ontologyInfo.getInferredModel()
+        : ontologyInfo.getModel();
     if (ontology == null) {
       return ModelFactory.createDefaultModel();
     }

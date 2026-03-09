@@ -4,6 +4,7 @@ import be.vlaanderen.omgeving.oddtoolkit.adapter.AbstractAdapter;
 import be.vlaanderen.omgeving.oddtoolkit.config.DiagramGeneratorProperties;
 import be.vlaanderen.omgeving.oddtoolkit.config.JavaGeneratorProperties;
 import be.vlaanderen.omgeving.oddtoolkit.config.SchemaGeneratorProperties;
+import be.vlaanderen.omgeving.oddtoolkit.model.Cardinality;
 import be.vlaanderen.omgeving.oddtoolkit.model.ConceptSchemeInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.OntologyInfo;
 import java.io.IOException;
@@ -116,6 +117,14 @@ public class JavaGenerator extends SchemaGenerator {
         builder.append("import jakarta.persistence.Table;\n");
         builder.append("import jakarta.persistence.Entity;\n");
         builder.append("import jakarta.persistence.Column;\n");
+        builder.append("import jakarta.persistence.OneToOne;\n");
+        builder.append("import jakarta.persistence.OneToMany;\n");
+        builder.append("import jakarta.persistence.ManyToOne;\n");
+        builder.append("import jakarta.persistence.ManyToMany;\n");
+        builder.append("import jakarta.persistence.JoinColumn;\n");
+        builder.append("import jakarta.persistence.JoinTable;\n");
+        builder.append("import jakarta.persistence.JoinColumns;\n");
+        builder.append("import java.util.List;\n");
       }
       builder.append("\n");
 
@@ -185,12 +194,35 @@ public class JavaGenerator extends SchemaGenerator {
         } else {
           Column equivalentColumn = equivalentTable.getColumnByAttribute(prop);
           if (equivalentColumn == null) {
-            // Relation
-            switch (prop.getCardinality()) {
-              case ONE_TO_ONE -> builder.append("\t@OneToOne\n");
-              case ONE_TO_MANY -> builder.append("\t@OneToMany\n");
-              case MANY_TO_ONE -> builder.append("\t@ManyToOne\n");
-              case MANY_TO_MANY -> builder.append("\t@ManyToMany\n");
+            // Relation - check if it's many-to-many with join table
+            if (prop.getCardinality().equals(Cardinality.MANY_TO_MANY)) {
+              // Many-to-many relationship
+              builder.append("\t@ManyToMany\n");
+
+              // Try to get the join table information
+              // For many-to-many, we need @JoinTable with joinColumns and inverseJoinColumns
+              Table targetTable = getTableByClazz(prop.getRange());
+              if (targetTable != null) {
+                // Construct the join table name based on naming convention
+                // Typically: rel_<source>_<target> or similar pattern
+                String joinTableName = "rel_" + equivalentTable.getName().toLowerCase() + "_"
+                    + targetTable.getName().toLowerCase();
+
+                builder.append("\t@JoinTable(\n");
+                builder.append("\t\tname = \"").append(joinTableName).append("\",\n");
+                builder.append("\t\tjoinColumns = @JoinColumn(name = \"source_uuid\"),\n");
+                builder.append("\t\tinverseJoinColumns = @JoinColumn(name = \"target_uuid\")\n");
+                builder.append("\t)\n");
+              }
+            } else {
+              // Other relationships (one-to-one, one-to-many, many-to-one)
+              switch (prop.getCardinality()) {
+                case ONE_TO_ONE -> builder.append("\t@OneToOne\n");
+                case ONE_TO_MANY -> builder.append("\t@OneToMany\n");
+                case MANY_TO_ONE -> builder.append("\t@ManyToOne\n");
+                default -> {
+                }
+              }
             }
           } else if (prop.getRange() == null) {
             // Atomic attribute
@@ -270,4 +302,5 @@ public class JavaGenerator extends SchemaGenerator {
     String className = clazz.getSimpleName();
     return new Pair<>(packageName, className);
   }
+
 }

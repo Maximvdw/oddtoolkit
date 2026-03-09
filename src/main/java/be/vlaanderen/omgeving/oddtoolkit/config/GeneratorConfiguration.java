@@ -23,9 +23,23 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * Configuration for creating generator beans and filtering adapters based on properties.
+ *
+ * This configuration:
+ * - Registers all generators with the GeneratorRegistry for dynamic access
+ * - Filters adapters based on GeneratorProperties configuration
+ * - Supports both legacy @Bean approach and new plugin-based approach
+ * - Maintains backward compatibility with existing YAML configuration
  */
 @Configuration
-@EnableConfigurationProperties({GeneratorProperties.class, ClassDiagramProperties.class, DiagramGeneratorProperties.class, ERDiagramProperties.class})
+@EnableConfigurationProperties({
+    GeneratorProperties.class,
+    ClassDiagramProperties.class,
+    DiagramGeneratorProperties.class,
+    ERDiagramProperties.class,
+    TypescriptGeneratorProperties.class,
+    JavaGeneratorProperties.class,
+    SchemaGeneratorProperties.class
+})
 public class GeneratorConfiguration {
 
   private static final Logger logger = LoggerFactory.getLogger(GeneratorConfiguration.class);
@@ -119,10 +133,40 @@ public class GeneratorConfiguration {
     return new TypescriptGenerator(ontologyInfo, conceptSchemeInfo, adapters, typescriptGeneratorProperties);
   }
 
+  /**
+   * Register all generators with the GeneratorRegistry.
+   * This allows generators to be accessed dynamically by name through the registry.
+   *
+   * @param registry the generator registry
+   * @param classGenerator the class generator bean
+   * @param classDiagramGenerator the class diagram generator bean
+   * @param erDiagramGenerator the ER diagram generator bean
+   * @param sqlGenerator the SQL generator bean
+   * @param shaclGenerator the SHACL generator bean
+   * @param javaGenerator the Java generator bean
+   * @param typescriptGenerator the TypeScript generator bean
+   */
+  @Bean
+  public GeneratorRegistrationHelper generatorRegistrationHelper(
+      GeneratorRegistry registry,
+      ClassGenerator classGenerator,
+      ClassDiagramGenerator classDiagramGenerator,
+      ERDiagramGenerator erDiagramGenerator,
+      SQLGenerator sqlGenerator,
+      ShaclGenerator shaclGenerator,
+      JavaGenerator javaGenerator,
+      TypescriptGenerator typescriptGenerator) {
+    return new GeneratorRegistrationHelper(registry,
+        classGenerator, classDiagramGenerator, erDiagramGenerator,
+        sqlGenerator, shaclGenerator, javaGenerator, typescriptGenerator);
+  }
+
   private List<AbstractAdapter<?>> selectAdapters(Map<String, AbstractAdapter<?>> adapterBeans, List<String> requestedAdapterNames) {
     List<AbstractAdapter<?>> available = new ArrayList<>(adapterBeans.values());
     if (requestedAdapterNames == null || requestedAdapterNames.isEmpty()) {
       // no specific selection -> use all available adapters
+      // Sort by dependencies
+      available.sort(new be.vlaanderen.omgeving.oddtoolkit.adapter.AdapterDependencyComparator());
       return available;
     }
     // Map bean names to instances
@@ -137,6 +181,8 @@ public class GeneratorConfiguration {
         logger.warn("Requested adapter '{}' is not available or is disabled; ignoring.", name);
       }
     }
+    // Sort by dependencies
+    selected.sort(new be.vlaanderen.omgeving.oddtoolkit.adapter.AdapterDependencyComparator());
     return selected;
   }
 }

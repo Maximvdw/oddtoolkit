@@ -14,7 +14,8 @@ import org.springframework.stereotype.Component;
 
 @AdapterDependency({
     OntologyClassExtractAdapter.class,
-    ConceptSchemeLoadAdapter.class
+    ConceptSchemeLoadAdapter.class,
+    ConceptSchemeExtractAdapter.class
 })
 @ConditionalOnProperty(prefix = "adapters", name = "concept-class-extract.enabled", havingValue = "true", matchIfMissing = true)
 @Component("concept-class-extract")
@@ -30,10 +31,13 @@ public class ConceptClassExtractAdapter extends AbstractAdapter<OntologyInfo> {
   @Override
   public OntologyInfo adapt(OntologyInfo info) {
     // Add all concept classes that are not already present in the ontology info
+    if (conceptSchemeInfo.getClassConcepts() == null) {
+      return info;
+    }
     conceptSchemeInfo.getClassConcepts().forEach(concept -> {
       if (info.getClassByUri(concept.getUri()) == null) {
         ClassInfo classInfo = new ClassInfo(Scope.ONTOLOGY, concept.getResource());
-        classInfo.setUri(concept.getEquivalents().get(0));
+        classInfo.setUri(concept.getEquivalents().getFirst());
         extractProperties(info, classInfo);
         info.addClass(classInfo);
       }

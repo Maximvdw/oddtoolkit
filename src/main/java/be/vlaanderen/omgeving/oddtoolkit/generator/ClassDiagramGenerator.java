@@ -3,7 +3,6 @@ package be.vlaanderen.omgeving.oddtoolkit.generator;
 import be.vlaanderen.omgeving.oddtoolkit.adapter.AbstractAdapter;
 import be.vlaanderen.omgeving.oddtoolkit.config.ClassDiagramProperties;
 import be.vlaanderen.omgeving.oddtoolkit.config.DiagramGeneratorProperties;
-import be.vlaanderen.omgeving.oddtoolkit.model.ClassConceptInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.ConceptSchemeInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.OntologyInfo;
 import java.util.List;
@@ -60,16 +59,12 @@ public class ClassDiagramGenerator extends DiagramGenerator {
     emitStyleDefinitions(builder);
   }
 
-  // Keep the existing helper methods but make them protected so DiagramGenerator can call them
   protected void generateClass(StringBuilder builder, Clazz classInfo, ClassType type) {
-    // Get the concept class
-    ClassConceptInfo classConceptInfo = getClassConceptForClass(classInfo.getUri());
-    String className = classConceptInfo != null ? classConceptInfo.getName() : classInfo.getName();
     // Add documentation as comment
     builder.append("%% ").append(classInfo.getUri()).append("\n");
     // apply style if configured
     String style = getStyleForClass(classInfo.getClassInfo());
-    builder.append("class ").append(className);
+    builder.append("class ").append(classInfo.getName());
     if (style != null) {
       builder.append(":::").append(style);
     }

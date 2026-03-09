@@ -26,6 +26,11 @@ public class ConceptSchemeExtractAdapter extends AbstractAdapter<ConceptSchemeIn
 
   @Override
   public ConceptSchemeInfo adapt(ConceptSchemeInfo info) {
+    // If no model is loaded, return early
+    if (info.getModel() == null) {
+      return info;
+    }
+
     // Extract the concepts
     ResIterator conceptIterator = info.getModel().listResourcesWithProperty(
         RDF.type,

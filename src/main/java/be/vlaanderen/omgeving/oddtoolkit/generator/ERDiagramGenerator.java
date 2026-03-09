@@ -4,6 +4,7 @@ import be.vlaanderen.omgeving.oddtoolkit.adapter.AbstractAdapter;
 import be.vlaanderen.omgeving.oddtoolkit.config.DiagramGeneratorProperties;
 import be.vlaanderen.omgeving.oddtoolkit.config.ERDiagramProperties;
 import be.vlaanderen.omgeving.oddtoolkit.config.SchemaGeneratorProperties;
+import be.vlaanderen.omgeving.oddtoolkit.model.Cardinality;
 import be.vlaanderen.omgeving.oddtoolkit.model.ConceptSchemeInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.OntologyInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.PropertyInfo;
@@ -43,6 +44,7 @@ public class ERDiagramGenerator extends SchemaGenerator {
 
   @Override
   protected void renderContent(StringBuilder builder, String type) {
+    builder.append("direction LR\n\n");
     generateTables(builder);
     emitStyleDefinitions(builder);
   }

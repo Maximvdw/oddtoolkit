@@ -4,11 +4,12 @@ Welcome to the ODDToolkit documentation.
 
 This site explains how to build, use and contribute to ODDToolkit — an Ontology Driven Design Toolkit for generating diagrams and Java artifacts from ontology sources.
 
-- Getting started: see the Guide → Usage
-- Repository: link to the repository root
+## Get Started
 
-
-## Quick links
-
-- Guide: /guide/usage
+- **New user?** Start with [Usage Guide](/guide/usage)
+- **Need to configure?** See [Configuration Guide](/guide/configuration)
+- **Want to learn about ontologies?** Read [Ontology & Metadata](/guide/ontology-metadata)
+- **Using from CLI?** Check [CLI Guide](/cli-guide)
+- **Building extensions?** See [Extension Guide](/extension-guide)
+- **Need a quick demo?** Try [Quickstart](/QUICKSTART)
 

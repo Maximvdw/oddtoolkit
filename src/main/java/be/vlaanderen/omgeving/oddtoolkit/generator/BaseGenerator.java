@@ -1,60 +1,77 @@
 package be.vlaanderen.omgeving.oddtoolkit.generator;
 
 import be.vlaanderen.omgeving.oddtoolkit.adapter.AbstractAdapter;
-import be.vlaanderen.omgeving.oddtoolkit.adapter.AdapterDependencyComparator;
-import be.vlaanderen.omgeving.oddtoolkit.config.OntologyConfiguration;
 import be.vlaanderen.omgeving.oddtoolkit.model.ClassConceptInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.ClassInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.ConceptSchemeInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.OntologyInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.PropertyConceptInfo;
-import be.vlaanderen.omgeving.oddtoolkit.model.PropertyInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.Scope;
 import java.util.List;
-import lombok.Getter;
-import org.apache.jena.atlas.lib.Pair;
-import org.apache.jena.vocabulary.XSD;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
 
-@Getter
-@Component
-public class BaseGenerator {
+/**
+ * Abstract base class for all generators.
+ * Provides common structure and configuration handling for generator implementations.
+ *
+ * Custom generators should extend this class and:
+ * 1. Implement the {@link #generate()} method with generator logic
+ * 2. Override {@link #getName()} to provide a unique identifier
+ * 3. Optionally override {@link #validate()} for custom validation
+ */
+public abstract class BaseGenerator {
+  private static final Logger logger = LoggerFactory.getLogger(BaseGenerator.class);
+  protected final OntologyInfo ontologyInfo;
+  protected final ConceptSchemeInfo conceptSchemeInfo;
+  protected final List<AbstractAdapter<?>> adapters;
+  protected final Map<String, Object> config;
 
-  private static final Logger logger = LoggerFactory.getLogger(
-      BaseGenerator.class);
-
-  private final OntologyConfiguration ontologyConfiguration;
-  private final OntologyInfo ontologyInfo;
-  private final ConceptSchemeInfo conceptSchemeInfo;
-  private final List<AbstractAdapter<?>> adapters;
-
-  public BaseGenerator(OntologyInfo ontologyInfo, ConceptSchemeInfo conceptSchemeInfo,
-      List<AbstractAdapter<?>> adapters) {
+  public BaseGenerator(
+      OntologyInfo ontologyInfo,
+      ConceptSchemeInfo conceptSchemeInfo,
+      List<AbstractAdapter<?>> adapters,
+      Map<String, Object> config) {
     this.ontologyInfo = ontologyInfo;
-    this.ontologyConfiguration = ontologyInfo.getConfig();
     this.conceptSchemeInfo = conceptSchemeInfo;
-    this.adapters = adapters;
-
-    initialize();
+    this.adapters = adapters != null ? adapters : List.of();
+    this.config = config != null ? config : Map.of();
   }
 
-  private void initialize() {
-    // Sort the adapters based on their order to ensure they are applied in the correct sequence
-    // Use the @AdapterDependency annotation to determine the order of the adapters
-    adapters.sort(new AdapterDependencyComparator());
-    // Initialize the generator by adapting the ontology and concept scheme information
-    for (AbstractAdapter<?> adapter : adapters) {
-      if (adapter.canAdapt(ontologyInfo)) {
-        adapter.setInfo(ontologyInfo);
-      }
-      if (adapter.canAdapt(conceptSchemeInfo)) {
-        adapter.setInfo(conceptSchemeInfo);
-      }
-    }
+  /**
+   * Get the unique name of this generator.
+   * Must be unique across all registered generators.
+   *
+   * @return generator name (e.g., "class-diagram", "sql", "typescript")
+   */
+  public String getName() {
+    return this.getClass().getSimpleName().toLowerCase();
   }
 
+  /**
+   * Get a human-readable description of what this generator does.
+   *
+   * @return generator description
+   */
+  public String getDescription() {
+    return "Generator: " + getName();
+  }
+
+  /**
+   * Execute the generation logic.
+   * Implementation should handle all generation steps and error handling.
+   *
+   * @throws Exception if generation fails
+   */
+  public void generate() throws Exception {
+    run();
+  }
+
+  /**
+   * Run the generator. This is the main execution method.
+   * Subclasses should override this to implement their generation logic.
+   */
   @SuppressWarnings("unchecked")
   public void run() {
     for (AbstractAdapter<?> adapter : adapters) {
@@ -66,6 +83,67 @@ public class BaseGenerator {
         ((AbstractAdapter<ConceptSchemeInfo>) adapter).adapt(conceptSchemeInfo);
       }
     }
+  }
+
+  /**
+   * Validate that the generator can execute with current configuration.
+   * Override to add custom validation logic.
+   *
+   * @throws IllegalStateException if validation fails
+   */
+  public void validate() throws IllegalStateException {
+    if (ontologyInfo == null) {
+      throw new IllegalStateException("ontologyInfo must not be null");
+    }
+    if (conceptSchemeInfo == null) {
+      throw new IllegalStateException("conceptSchemeInfo must not be null");
+    }
+  }
+
+  /**
+   * Get configuration value for a given key.
+   *
+   * @param key configuration key
+   * @return configuration value or null if not found
+   */
+  protected Object getConfigValue(String key) {
+    return config.get(key);
+  }
+
+  /**
+   * Get configuration value for a given key with a default value.
+   *
+   * @param key configuration key
+   * @param defaultValue default value if key not found
+   * @return configuration value or default
+   */
+  protected Object getConfigValue(String key, Object defaultValue) {
+    return config.getOrDefault(key, defaultValue);
+  }
+
+  /**
+   * Get string configuration value.
+   *
+   * @param key configuration key
+   * @return configuration value as string or null
+   */
+  protected String getConfigString(String key) {
+    Object value = config.get(key);
+    return value != null ? value.toString() : null;
+  }
+
+  /**
+   * Get boolean configuration value.
+   *
+   * @param key configuration key
+   * @param defaultValue default value if key not found or invalid
+   * @return configuration value as boolean
+   */
+  protected boolean getConfigBoolean(String key, boolean defaultValue) {
+    Object value = config.get(key);
+    if (value == null) return defaultValue;
+    if (value instanceof Boolean) return (Boolean) value;
+    return Boolean.parseBoolean(value.toString());
   }
 
   /**
@@ -124,87 +202,19 @@ public class BaseGenerator {
         .orElse(null);
   }
 
-  public ClassInfo getXsdType(String uri) {
-    // Get the XSD Property for a given URI, if it exists
-    if (uri.startsWith(XSD.getURI())) {
-      String localName = uri.substring(XSD.getURI().length());
-      ClassInfo info = new ClassInfo(Scope.EXTERNAL, null);
-      info.setUri(uri);
-      info.setName(localName);
-      return info;
-    }
-    return null;
-  }
-
   /**
-   * Utility to convert a string to snake_case, suitable for identifiers in ER diagrams.
+   * Convert a string to snake_case.
    *
-   * @param input The input string to convert
-   * @return The snake_case version of the input string
+   * @param input the string to convert
+   * @return the string in snake_case
    */
   protected static String toSnakeCase(String input) {
-    if (input == null) {
-      return null;
+    if (input == null || input.isEmpty()) {
+      return input;
     }
-    String s = input.trim();
-    // Replace camelCase boundaries with underscore
-    s = s.replaceAll("([a-z0-9])([A-Z])", "$1_$2");
-    // Replace non-alphanumeric chars with underscore
-    s = s.replaceAll("[^A-Za-z0-9]+", "_");
-    s = s.replaceAll("_+", "_");
-    s = s.replaceAll("^_+|_+$", "");
-    return s.toLowerCase();
-  }
-
-  public Pair<String, String> getClassNameAndLabel(ClassInfo classInfo) {
-    ClassConceptInfo classConceptInfo = getClassConceptForClass(classInfo.getUri());
-    return getStringStringPair(classConceptInfo != null,
-        classConceptInfo != null ? classConceptInfo.getName() : null,
-        classInfo.getName(), classConceptInfo != null ? classConceptInfo.getLabel() : null);
-  }
-
-  public Pair<String, String> getPropertyNameAndLabel(PropertyInfo propertyInfo) {
-    PropertyConceptInfo propertyConceptInfo = getPropertyConceptForProperty(propertyInfo.getUri());
-    return getStringStringPair(propertyConceptInfo != null,
-        propertyConceptInfo != null ? propertyConceptInfo.getName() : null,
-        propertyInfo.getName(), propertyConceptInfo != null ? propertyConceptInfo.getLabel() : null);
-  }
-
-  private Pair<String, String> getStringStringPair(boolean b, String name, String name2,
-      String label) {
-    String propertyName =
-        b ? name : name2;
-    String propertyConceptLabel =
-        b ? (label != null
-            ? label : name) : null;
-    String propertyLabel =
-        propertyConceptLabel != null ? propertyConceptLabel : name2;
-    return new Pair<>(propertyName, propertyLabel);
-  }
-
-  protected enum Cardinality {
-    ONE_TO_ONE("1..1"),
-    ONE_TO_MANY("1..*"),
-    MANY_TO_ONE("*..1"),
-    MANY_TO_MANY("*..*");
-
-    private final String label;
-
-    Cardinality(String label) {
-      this.label = label;
-    }
-
-    @Override
-    public String toString() {
-      return label;
-    }
-
-    public boolean isFromMany() {
-      return this == MANY_TO_ONE || this == MANY_TO_MANY;
-    }
-
-    public boolean isToMany() {
-      return this == ONE_TO_MANY || this == MANY_TO_MANY;
-    }
+    return input
+        .replaceAll("([a-z])([A-Z]+)", "$1_$2")
+        .replaceAll("([A-Z]+)([A-Z][a-z])", "$1_$2")
+        .toLowerCase();
   }
 }

@@ -1,6 +1,6 @@
 package be.vlaanderen.omgeving.oddtoolkit.config;
 
-import be.vlaanderen.omgeving.oddtoolkit.model.PropertyInfo.Cardinality;
+import be.vlaanderen.omgeving.oddtoolkit.model.PropertyInfo;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.Getter;
@@ -27,11 +27,22 @@ public class OntologyConfiguration {
 
   private List<String> temporalProperties = new ArrayList<>();
 
+  private MetadataClasses metadataClasses = new MetadataClasses();
+
+  @Getter
+  @Setter
+  public static class MetadataClasses {
+    private String suffix = "Metadata";
+    private String key;
+    private String value;
+    private List<String> classes = new ArrayList<>();
+  }
+
   @Getter
   @Setter
   public static class OverrideProperty {
     private String uri;
-    private Cardinality cardinality;
+    private PropertyInfo.Cardinality cardinality;
     private String datatype;
   }
 
@@ -43,6 +54,6 @@ public class OntologyConfiguration {
     private String comment;
     private String range;
     private boolean identifier = false;
-    private Cardinality cardinality;
+    private PropertyInfo.Cardinality cardinality;
   }
 }

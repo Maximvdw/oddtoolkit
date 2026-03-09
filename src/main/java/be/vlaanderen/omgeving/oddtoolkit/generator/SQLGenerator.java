@@ -26,9 +26,19 @@ public class SQLGenerator extends SchemaGenerator {
   }
 
   @Override
+  public String getName() {
+    return "sql";
+  }
+
+  @Override
+  public String getDescription() {
+    return "Generates SQL schema from the ontology";
+  }
+
+  @Override
   public void run() {
     super.run();
-    String generated = generate();
+    String generated = generateSQL();
     if (getOutputFile() != null) {
       saveToFile(getOutputFile(), generated);
     } else {
@@ -36,10 +46,10 @@ public class SQLGenerator extends SchemaGenerator {
     }
   }
 
-  private String generate() {
+  private String generateSQL() {
     StringBuilder sb = new StringBuilder();
     sb.append("-- Auto-generated SQL schema from ODDToolkit\n");
-    sb.append("-- Ontology: ").append(getOntologyInfo().getUri()).append("\n");
+    sb.append("-- Ontology: ").append(ontologyInfo.getUri()).append("\n");
     sb.append("-- Generated: ").append(java.time.ZonedDateTime.now()).append("\n\n");
     generateEnumTypes(sb);
     generateTables(sb);

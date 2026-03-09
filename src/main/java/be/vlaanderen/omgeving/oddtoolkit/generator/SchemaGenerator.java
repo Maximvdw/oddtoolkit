@@ -5,6 +5,7 @@ import be.vlaanderen.omgeving.oddtoolkit.config.DiagramGeneratorProperties;
 import be.vlaanderen.omgeving.oddtoolkit.config.OntologyConfiguration;
 import be.vlaanderen.omgeving.oddtoolkit.config.OntologyConfiguration.ExtraProperty;
 import be.vlaanderen.omgeving.oddtoolkit.config.SchemaGeneratorProperties;
+import be.vlaanderen.omgeving.oddtoolkit.model.Cardinality;
 import be.vlaanderen.omgeving.oddtoolkit.model.ConceptSchemeInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.OntologyInfo;
 import be.vlaanderen.omgeving.oddtoolkit.model.PropertyInfo;
@@ -180,19 +181,26 @@ public abstract class SchemaGenerator extends DiagramGenerator {
     // Get identity columns if enabled
     if (schemaGeneratorProperties.getIdentityTables().isEnabled()) {
       Column fromIdentityColumn = relation.getFrom().getColumns().stream()
-          .filter(c -> c.isPrimaryKey() && c.isForeignKey())
+          .filter(Attribute::isPrimaryKey)
+          .map(Column::copy)
+          .peek(a -> a.setName("source_" + a.getName()))
           .findFirst()
           .orElse(null);
       Column toIdentityColumn = relation.getTo().getColumns().stream()
-          .filter(c -> c.isPrimaryKey() && c.isForeignKey())
+          .filter(Attribute::isPrimaryKey)
+          .map(Column::copy)
+          .peek(a -> a.setName("target_" + a.getName()))
           .findFirst()
           .orElse(null);
-      if (fromIdentityColumn != null) {
-        joinColumns.add(fromIdentityColumn.copy());
+      if (fromIdentityColumn != null && toIdentityColumn != null) {
+        joinColumns.add(fromIdentityColumn);
+        joinColumns.add(toIdentityColumn);
+      } else {
+        throw new IllegalStateException(
+            "Cannot create join table for relation " + relation.getName()
+                + " because the from table does not have an identity column");
       }
-      if (toIdentityColumn != null) {
-        joinColumns.add(toIdentityColumn.copy());
-      }
+
       // Set all columns as FK in the join table
       joinColumns.forEach(c -> c.setForeignKey(true));
 
@@ -205,6 +213,11 @@ public abstract class SchemaGenerator extends DiagramGenerator {
         joinColumns.addAll(temporalColumns);
       }
       joinTable.setColumns(joinColumns);
+      // Create relations from original tables to join table
+      createJoinTableRelation(relation.getName(), relation.getFrom(), joinTable,
+          List.of(fromIdentityColumn));
+      createJoinTableRelation(relation.getName(), relation.getTo(), joinTable,
+          List.of(toIdentityColumn));
     } else {
       List<Column> leftColumns = relation.getFrom().getColumns().stream()
           .filter(Column::isPrimaryKey)
@@ -539,7 +552,8 @@ public abstract class SchemaGenerator extends DiagramGenerator {
     public Relation getRelationByAttribute(Attribute attribute) {
       return getRelations().stream()
           .filter(r -> r.getFromColumn() != null && r.getFromColumn().getPropertyInfo() != null
-              && r.getFromColumn().getPropertyInfo().equals(attribute.getPropertyInfo()))
+              && r.getFromColumn().getPropertyInfo().equals(attribute.getPropertyInfo()) &&
+              r.getFromColumn().getDomain().equals(attribute.getDomain()))
           .findFirst()
           .orElse(null);
     }
